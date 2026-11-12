@@ -1,0 +1,224 @@
+// The only file that includes the Oneiroi firmware. The firmware's hardware layer (Ui.h, ParamController.h, Midi.h,
+// Led.h) is NOT used: on the module it turns knob, fader and jack readings into the PatchCtrls values the engine reads.
+// Here the plugin parameters are written into PatchCtrls directly, with the same arithmetic as Ui::Poll for the parts
+// that matter to the sound: the fader curves, the fader snapping to full, the per-block smoothing of the knobs (the
+// same coefficients as the KnobController / FaderController objects in Ui.h), and the oscillator pitch (octave +
+// Pitch knob + modulation + note), where a MIDI note takes the place of the V/Oct jack.
+// The CV inputs are not copied (scope item 3), so every CV amount is 0 and every CV value is 0.
+// Sync (Logic's tempo) is not connected yet: the firmware's own internal clock runs (Milestone 2).
+#include "AetherEngine.h"
+#include "owl_runtime.h"
+#include "Oneiroi.h"
+#include "Clock.h"
+#include <algorithm>
+#include <cmath>
+
+namespace aether
+{
+namespace
+{
+// One-pole smoothing per block, as ONE_POLE in the firmware: out += coefficient * (in - out). The first block jumps.
+struct Smooth
+{
+    float v = 0.f;
+    float step (float target, float coeff, bool first)
+    {
+        if (first) v = target; else v += coeff * (target - v);
+        return v;
+    }
+};
+}
+
+struct Engine::Impl
+{
+    PatchCtrls ctrls {};
+    PatchCvs cvs {};
+    PatchState state {};
+    EngineParams params;
+    Oneiroi* oneiroi = nullptr;
+    Clock* clock = nullptr;
+    AudioBuffer* buffer = nullptr;
+    bool firstBlock = true;
+    bool clearRequested = false;
+    // The firmware draws random numbers while it runs (the sample-and-hold modulation). Every engine keeps its own
+    // generator state and swaps it in only while it runs, so several instances never disturb each other.
+    uint32_t rng = 33641u;
+    struct RandomScope
+    {
+        uint32_t saved; uint32_t& mine;
+        explicit RandomScope (uint32_t& m) : saved (aether_random_state()), mine (m) { aether_seed_random (mine); }
+        ~RandomScope() { mine = aether_random_state(); aether_seed_random (saved); }
+    };
+
+    // smoothed controls
+    Smooth inVol, looperVol, osc1Vol, osc2Vol, filterVol, resonatorVol, echoVol, ambienceVol;
+    Smooth looperSpeed, looperStart, looperLength, pitchKnob, detune, cutoff, resonance, resTune, resFeedback,
+           echoDensity, echoRepeats, ambSpacetime, ambDecay, modLevel, modSpeed;
+    float notePot = 0.f, noteCv = 0.f;
+
+    Impl()
+    {
+        aether_init_owl_runtime();
+        aether_ZeroedAllocations zeroed;      // the firmware expects cleared memory, like OpenWare's allocator gives
+        RandomScope randomScope (rng);
+
+        state.sampleRate = (float) kEngineSampleRate;
+        state.blockSize = kEngineBlockSize;
+        state.blockRate = (float) (kEngineSampleRate / kEngineBlockSize);   // 1500
+        state.inputLevel = FloatArray::create (kEngineBlockSize);
+        state.efModLevel = FloatArray::create (kEngineBlockSize);
+        state.outLevel = 1.f;
+        state.randomSlew = kRandomSlewSamples;
+        state.randomHasSlew = false;
+        state.softTakeover = false;
+        state.modAttenuverters = false;
+        state.cvAttenuverters = false;
+        state.funcMode = FUNC_MODE_NONE;
+        state.clockSource = CLOCK_SOURCE_INTERNAL;
+        state.syncIn = false;
+        state.startupPhase = STARTUP_DONE;
+        // Calibration values of the module's own V/Oct and speed knob. Only the speed knob's centre matters here: the
+        // looper speed knob is 0 at 0.51, 1x at 0.75 and 2x at 1.0 (the module's value comes from its own calibration).
+        state.c2 = 1102.f / 4095.f;
+        state.c5 = 2334.f / 4095.f;
+        state.pitchZero = 2128.f / 4041.f;
+        state.speedZero = 0.51f;
+
+        // Same order as the firmware's patch: Oneiroi, then Clock (the Clock creates the tempo object).
+        oneiroi = Oneiroi::create (&ctrls, &cvs, &state);
+        clock = Clock::create (&ctrls, &state);
+        buffer = AudioBuffer::create (2, kEngineBlockSize);
+    }
+
+    ~Impl()
+    {
+        AudioBuffer::destroy (buffer);
+        Oneiroi::destroy (oneiroi);
+        Clock::destroy (clock);
+        TapTempo::destroy (state.tempo);
+        FloatArray::destroy (state.inputLevel);
+        FloatArray::destroy (state.efModLevel);
+    }
+
+    static float snap (float v) { return v >= kOne ? 1.f : v; }   // as in Ui::Poll
+
+    void applyParams()
+    {
+        const EngineParams& p = params;
+        const bool f = firstBlock;
+
+        // Faders: smoothed (0.02 per block), curve value squared (MapExpo), the effect faders snap to full at the top.
+        ctrls.inputVol = MapExpo (inVol.step (p.inputVolume, 0.02f, f));
+        ctrls.looperVol = MapExpo (looperVol.step (p.looperVolume, 0.02f, f));
+        ctrls.osc1Vol = MapExpo (osc1Vol.step (p.osc1Volume, 0.02f, f));
+        ctrls.osc2Vol = MapExpo (osc2Vol.step (p.osc2Volume, 0.02f, f));
+        ctrls.filterVol = snap (filterVol.step (p.filterLevel, 0.02f, f));
+        ctrls.resonatorVol = snap (resonatorVol.step (p.resonatorLevel, 0.02f, f));
+        ctrls.echoVol = snap (echoVol.step (p.echoLevel, 0.02f, f));
+        ctrls.ambienceVol = snap (ambienceVol.step (p.ambienceLevel, 0.02f, f));
+
+        // Looper
+        ctrls.looperSos = p.looperSos;
+        ctrls.looperFilter = p.looperFilter;
+        ctrls.looperSpeed = looperSpeed.step (p.looperSpeed, 0.005f, f);
+        ctrls.looperSpeedModAmount = p.looperSpeedMod;
+        ctrls.looperStart = looperStart.step (p.looperStart, 0.005f, f);
+        ctrls.looperStartModAmount = p.looperStartMod;
+        ctrls.looperLength = looperLength.step (p.looperLength, 0.005f, f);
+        ctrls.looperLengthModAmount = p.looperLengthMod;
+        ctrls.looperRecording = p.looperRecording ? 1.f : 0.f;
+        ctrls.looperResampling = p.looperPost ? 1.f : 0.f;
+
+        // Oscillators
+        ctrls.oscDetune = detune.step (p.oscDetune, 0.1f, f);
+        ctrls.oscDetuneModAmount = p.oscDetuneMod;
+        ctrls.oscPitchModAmount = p.oscPitchMod;
+        ctrls.oscUseWavetable = p.oscUseWavetable ? 1.f : 0.f;
+        ctrls.oscOctave = (float) p.oscOctave;
+
+        // Pitch: as in Ui::Poll, with the MIDI note in the place of the V/Oct jack (the note is a semitone offset).
+        {
+            const float interval = p.noteOffset - noteCv;
+            if (f || interval < -0.4f || interval > 0.4f) noteCv = p.noteOffset;
+            else noteCv += 0.1f * interval;
+            const float tune = pitchKnob.step (p.oscPitch, 0.995f, f);
+            float note = Modulate (tune - 0.5f, ctrls.oscPitchModAmount, state.modValue, 0, 0, -1.f, 1.f, state.modAttenuverters);
+            note = 12.f * note + 12.f * ctrls.oscOctave;
+            if (f) notePot = note; else notePot += 0.1f * (note - notePot);
+            ctrls.oscPitch = M2F (notePot + noteCv);
+
+            ctrls.oscUnison = Clamp (p.oscUnison, -1.f, 1.f);
+            if (ctrls.oscUnison >= -0.03f && ctrls.oscUnison <= 0.03f) { ctrls.oscUnison = 0.f; state.oscUnisonCenterFlag = true; }
+            else state.oscUnisonCenterFlag = false;
+        }
+
+        // Filter
+        ctrls.filterMode = p.filterMode;
+        ctrls.filterPosition = p.filterPosition;
+        ctrls.filterNoiseLevel = p.filterNoise;          // used by the AetherUmbra change in Filter.h
+        ctrls.filterCutoff = cutoff.step (p.filterCutoff, 0.01f, f);
+        ctrls.filterCutoffModAmount = p.filterCutoffMod;
+        ctrls.filterResonance = resonance.step (p.filterResonance, 0.01f, f);
+        ctrls.filterResonanceModAmount = p.filterResonanceMod;
+
+        // Resonator
+        ctrls.resonatorTune = resTune.step (p.resonatorTune, 0.005f, f);
+        ctrls.resonatorTuneModAmount = p.resonatorTuneMod;
+        ctrls.resonatorFeedback = resFeedback.step (p.resonatorFeedback, 0.01f, f);
+        ctrls.resonatorFeedbackModAmount = p.resonatorFeedbackMod;
+        ctrls.resonatorDissonance = p.resonatorDissonance;
+
+        // Echo
+        ctrls.echoDensity = echoDensity.step (p.echoDensity, 0.005f, f);
+        ctrls.echoDensityModAmount = p.echoDensityMod;
+        ctrls.echoRepeats = echoRepeats.step (p.echoRepeats, 0.01f, f);
+        ctrls.echoRepeatsModAmount = p.echoRepeatsMod;
+        ctrls.echoFilter = p.echoFilter;
+
+        // Ambience
+        ctrls.ambienceSpacetime = ambSpacetime.step (p.ambienceSpacetime, 0.005f, f);
+        ctrls.ambienceSpacetimeModAmount = p.ambienceSpacetimeMod;
+        ctrls.ambienceDecay = ambDecay.step (p.ambienceDecay, 0.01f, f);
+        ctrls.ambienceDecayModAmount = p.ambienceDecayMod;
+        ctrls.ambienceAutoPan = p.ambienceAutoPan;
+
+        // Modulation
+        ctrls.modLevel = modLevel.step (p.modLevel, 0.01f, f);
+        ctrls.modSpeed = modSpeed.step (p.modSpeed, 0.01f, f);
+        ctrls.modType = p.modType;
+        state.modActive = ctrls.modLevel > 0.1f;
+
+        // CV amounts stay 0 (the CV jacks are replaced by host automation); CV values are 0 as well.
+        ctrls.looperSpeedCvAmount = ctrls.looperStartCvAmount = ctrls.looperLengthCvAmount = 0.f;
+        ctrls.oscPitchCvAmount = ctrls.oscDetuneCvAmount = 0.f;
+        ctrls.filterCutoffCvAmount = ctrls.filterResonanceCvAmount = 0.f;
+        ctrls.resonatorTuneCvAmount = ctrls.resonatorFeedbackCvAmount = 0.f;
+        ctrls.echoRepeatsCvAmount = ctrls.echoDensityCvAmount = 0.f;
+        ctrls.ambienceDecayCvAmount = ctrls.ambienceSpacetimeCvAmount = 0.f;
+
+        if (clearRequested) { state.clearLooperFlag = true; clearRequested = false; }
+    }
+
+    void process (float* left, float* right)
+    {
+        RandomScope randomScope (rng);
+        clock->Process();
+        applyParams();
+        firstBlock = false;
+
+        FloatArray l = buffer->getSamples (LEFT_CHANNEL);
+        FloatArray r = buffer->getSamples (RIGHT_CHANNEL);
+        for (int i = 0; i < kEngineBlockSize; ++i) { l[i] = left[i]; r[i] = right[i]; }
+        oneiroi->Process (*buffer);
+        for (int i = 0; i < kEngineBlockSize; ++i) { left[i] = l[i]; right[i] = r[i]; }
+    }
+};
+
+Engine::Engine() : impl (new Impl) {}
+Engine::~Engine() = default;
+void Engine::setParams (const EngineParams& p) { impl->params = p; }
+void Engine::clearLooper() { impl->clearRequested = true; }
+void Engine::processBlock (float* left, float* right) { impl->process (left, right); }
+float Engine::modulationValue() const { return impl->state.modValue; }
+float Engine::oscillatorHz() const { return impl->ctrls.oscPitch; }
+}

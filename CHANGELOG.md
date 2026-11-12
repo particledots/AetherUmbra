@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0: Milestone 1 (the engine runs; result to be filled in after the Logic test)
+- The Oneiroi engine is compiled into the plugin: an AU Instrument (`aumu`) named `AetherUmbra` and a VST3. The two Milestone 0
+  shells are gone. The engine runs at 48 kHz in blocks of 32 samples; a band-limited resampler and a block FIFO make it work at
+  44.1, 48 and 96 kHz and any host block size (delay 32 samples at 48 kHz, 65 at 44.1 kHz, 132 at 96 kHz, reported to Logic).
+- MIDI notes set the oscillator pitch (last note, held). Audio from the Side Chain menu goes through the looper, filter,
+  resonator, echo and ambience.
+- Window: the approved "module layout" (option C), resizable, with Filter Noise, Randomise and Undo / Redo; rough in looks.
+- Parameters (55, names and order fixed from now on; new ones only at the end), all automatable, saved with the project.
+- Firmware changes, marked and listed: Filter.h (Filter Noise control), DelayLine.h (read position kept inside the buffer;
+  found by the address sanitizer).
+- Tests: engine test (resampler, oscillators, wavetable, looper, every effect, random-settings run at 44.1/48/96 kHz, instances
+  bit-identical) on Apple silicon, Intel (Rosetta) and, here, under the address and undefined-behaviour sanitizers and ARM64;
+  plugin test (parameters, notes, side chain audio, looper, randomise and undo, state, window pictures).
+
 ## 0.1.0: Milestone 0 (two empty test shells)
 - Two empty plugins built from the same code, to find out in Logic which Audio Unit type gets audio AND MIDI notes:
   `AetherUmbra Test Instrument` (type `aumu`) and `AetherUmbra Test Music Effect` (type `aumf`). Both: stereo out; audio in

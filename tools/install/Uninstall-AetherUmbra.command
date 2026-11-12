@@ -1,7 +1,7 @@
 #!/bin/bash
-# Removes the AetherUmbra test shells (Audio Units and VST3s) from this Mac. Double-click to run; asks for the Mac
-# password once. It deletes only these eight items, if they exist:
-NAMES=("AetherUmbra Test Instrument" "AetherUmbra Test Music Effect")
+# Removes AetherUmbra (the Audio Unit and the VST3) from this Mac, and the two Milestone 0 test shells if they are still
+# there. Double-click to run; asks for the Mac password once. It deletes only these items, if they exist:
+NAMES=("AetherUmbra" "AetherUmbra Test Instrument" "AetherUmbra Test Music Effect")
 ITEMS=()
 for N in "${NAMES[@]}"; do
   ITEMS+=("/Library/Audio/Plug-Ins/Components/$N.component" "/Library/Audio/Plug-Ins/VST3/$N.vst3"

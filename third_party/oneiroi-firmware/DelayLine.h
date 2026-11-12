@@ -46,7 +46,10 @@ public:
     inline float readAt(int index)
     {
         int i = writeIndex_ - index - 1;
-        if (i < 0)
+        // AetherUmbra change: keep the read position inside the buffer even when the delay time
+        // (plus modulation / the +1 of the interpolation) reaches or passes the buffer length.
+        // The original added size_ only once and could read outside the memory. Same result as the original in range.
+        while (i < 0)
         {
             i += size_;
         }

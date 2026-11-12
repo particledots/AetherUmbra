@@ -8,13 +8,22 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 0.1.0, Milestone 0 (two empty test shells), passed in Logic on Nov 11, 2026. Result: the Instrument shell gets MIDI notes and, through Logic's Side Chain menu, audio; the Music Effect shell gets audio but no notes. The Instrument type is kept for Milestone 1. Nothing of the Oneiroi engine runs yet. The firmware source is
-imported unmodified into `third_party/oneiroi-firmware` and is not compiled yet.
+Version 0.2.0, Milestone 1: the Oneiroi engine runs as an AU **Instrument** (plus a VST3 from the same code) with a rough
+but complete window (every control of the approved "module layout"). It makes sound by itself (sine, supersaw or
+wavetable oscillator, looper), takes its pitch from MIDI notes (the last note played, held like a V/Oct voltage), and
+processes the audio of another Logic track chosen in the plugin's **Side Chain** menu. Looper, filter, resonator, echo,
+ambience, the internal modulation, Randomise and Undo/Redo are all working. Not in this version: Logic's tempo for the
+echo and modulation (Milestone 2), a measured tail length (12 s is used, measured for the similar Iro-x effects), the final
+window design.
 
-The two shells (an AU **Instrument**, type `aumu`, and an AU **Music Effect**, type `aumf`) exist to find out in Logic
-which type can be given audio and MIDI notes at the same time. Each one passes the audio of its track through unchanged,
-adds a simple test tone (a sine at -20 dB, switchable) that follows the last MIDI note, and shows in its window what it
-receives: the number of audio input channels with their level, and the last note.
+Things that differ from the module:
+- The **Filter Noise** knob is new: the firmware has a noise level in its filter but no control for it. At the middle
+  position the sound is exactly the firmware's (the noise is only heard when Resonance is above about 0.9, as on the module).
+- The **Looper** fader starts at 0. The firmware fills a new looper with quiet noise (the wavetable oscillator uses it as
+  its first tables); record something or press Clear, then raise the fader.
+- The sine oscillator is on by default (as on the module): the plugin plays a steady tone until you turn Sine down.
+- Randomise / Undo-Redo follow the firmware's rules (What = All, Osc, Looper, FX; Amount = Low, Mid, High) and can also be
+  automated (the parameters "Randomise" and "Undo/Redo Random").
 
 ## Install
 1. Download `AetherUmbra-macOS` from the latest run's Artifacts (GitHub, Actions tab) and unzip it.
@@ -22,19 +31,20 @@ receives: the number of audio input channels with their level, and the last note
    users, replacing an older copy. It does not install the VST3 (the zip still contains the VST3 files).
 3. Open Logic. If the plugins are missing: Logic's Settings > Plug-in Manager > Reset & Rescan Selection.
 
-`Uninstall-AetherUmbra.command` removes the Audio Units again, and also any AetherUmbra VST3 left from Milestone 0. GitHub deletes a run's download after 90 days. The build is
+`Uninstall-AetherUmbra.command` removes AetherUmbra again (Audio Unit and VST3), and the Milestone 0 test shells if they are still there. GitHub deletes a run's download after 90 days. The build is
 universal (Apple silicon and Intel), needs macOS 11 or later, and is not signed with an Apple developer ID: on a Mac
 that downloaded it from the internet, macOS may ask for approval the first time (`INSTALL.txt` in the zip says what to do).
 
 ## Plan
-Three milestones: 0 (this one: two empty shells, find the right plugin type), 1 (the engine runs in Logic with a rough
-window, notes set the pitch), 2 (finished: Logic's tempo, tail, randomiser, final window, licence check, both Macs).
+Three milestones: 0 (done: two empty shells, found the right plugin type), 1 (this one: the engine runs in Logic with a rough
+window, notes set the pitch), 2 (finished: Logic's tempo, tail, final window, licence check, both Macs).
 
 ## Source and licence
-- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). No changes yet;
-  later changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
+- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). Two small changes
+  (Filter Noise, one memory-safety fix in the delay line); changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
   file on every build.
-- `src`: AetherUmbra's own code (the shells and their window).
+- `src`: AetherUmbra's own code (the plugin, the window, the engine wrapper in `src/engine`, the OWL stand-ins in `src/engine/shim`).
+- `third_party/owlprogram`: the OpenWare / OwlProgram headers the firmware needs, unmodified (GPL).
 - The Oneiroi source contains code adapted from Mutable Instruments (MIT), ports from pbat.ch sndkit and a supersaw adapted
   from a published thesis; see `THIRD-PARTY-LICENSES.txt`. Licences still to check are named there.
 - AetherUmbra is released under GPL-3.0 (`LICENSE`). A build that is passed on must come with its source.

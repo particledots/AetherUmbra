@@ -5,7 +5,8 @@ AetherUmbra third-party components
    (see third_party/oneiroi-firmware/LICENSE; LICENSE_VCV.md in the same folder is a dual-licensing note by the
    contributors, it does not change the GPL-3.0-or-later terms for this use; it will be read again in full before anything
    is shared). Imported at the commit named in third_party/oneiroi-firmware/SOURCE.txt, byte for byte, which the build
-   checks file by file. As of Milestone 0 the firmware is not compiled into the plugin yet.
+   checks file by file. As of Milestone 1 the engine files are compiled into the plugin. Two small changes (Filter.h, DelayLine.h) are marked
+   "AetherUmbra change" and listed in third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md.
    AetherUmbra is an unofficial port. It is not made, approved or supported by Befaco. The Befaco panel design and
    artwork are not used.
    The Oneiroi source says that parts are ported or adapted from Mutable Instruments code by Emilie Gillet (comments in

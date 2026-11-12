@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure (universal, macOS 11+)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DAU_BUILD_PLUGIN_TEST=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DAETHER_BUILD_PLUGIN_TEST=ON
 
       - name: Check the Oneiroi source file by file (changes must be marked and listed)
         run: |
@@ -42,7 +42,40 @@ jobs:
           done
           echo "firmware check passed ($CHANGED file(s) changed, all marked and listed)"
 
-      - name: Plugin test (the plugin code with a pretend host, both shells, window pictures)
+      - name: Engine test (the Oneiroi engine without a host, native and Intel)
+        run: |
+          cmake --build build --target aether_engine_test -j4 > engine_test_log.txt 2>&1 || {
+            grep -E "error|Error" engine_test_log.txt | head -8 | while IFS= read -r line; do echo "::error::ENGINE TEST BUILD - $line"; done
+            tail -20 engine_test_log.txt; exit 1; }
+          ENGINE_BIN=$(find build -type f -name aether_engine_test | head -1)
+          [ -n "$ENGINE_BIN" ] || { echo "::error::ENGINE TEST program not found after the build"; exit 1; }
+          lipo -archs "$ENGINE_BIN"
+          mkdir -p engine-wav
+          set +e
+          arch -arm64 "$ENGINE_BIN" engine-wav > engine_test_result.txt 2>&1
+          STATUS=$?
+          set -e
+          tail -25 engine_test_result.txt
+          if [ $STATUS -ne 0 ] || ! grep -q "RESULT - all engine checks passed" engine_test_result.txt; then
+            echo "::error::ENGINE TEST (Apple silicon) stopped with exit status $STATUS; last line - $(tail -1 engine_test_result.txt)"
+            grep -i FAIL engine_test_result.txt | head -8 | while IFS= read -r line; do echo "::error::ENGINE TEST - $line"; done
+            exit 1
+          fi
+          # Intel half through Rosetta when available. Reported, does not stop the build.
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 "$ENGINE_BIN" > engine_test_result_intel.txt 2>&1 || true
+            tail -2 engine_test_result_intel.txt
+            grep -q "RESULT - all engine checks passed" engine_test_result_intel.txt && echo "::notice::ENGINE TEST intel (Rosetta) - all checks passed" || echo "::warning::ENGINE TEST intel (Rosetta) did not pass - $(tail -1 engine_test_result_intel.txt)"
+          else
+            echo "::notice::ENGINE TEST intel - Rosetta not available on this runner, skipped"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AetherUmbra-engine-wav
+          path: engine-wav
+
+      - name: Plugin test (the plugin code with a pretend host, window pictures)
         run: |
           cmake --build build --target AetherUmbra_PluginTest -j4 > plugin_test_log.txt 2>&1 || {
             grep -E "error|Error" plugin_test_log.txt | head -8 | while IFS= read -r line; do echo "::error::PLUGIN TEST BUILD - $line"; done
@@ -75,57 +108,53 @@ jobs:
           name: AetherUmbra-test-renders
           path: test-renders
 
-      - name: Build AU + VST3 (both shells)
+      - name: Build AU + VST3
         run: |
           # Compiler errors are also written as annotations (shown on the run page and readable through the API).
-          cmake --build build --target AetherUmbra_Instrument_AU AetherUmbra_Instrument_VST3 AetherUmbra_MusicEffect_AU AetherUmbra_MusicEffect_VST3 -j4 > build_log.txt 2>&1 || {
+          cmake --build build --target AetherUmbra_AU AetherUmbra_VST3 -j4 > build_log.txt 2>&1 || {
             grep -E "error|Error" build_log.txt | head -8 | while IFS= read -r line; do echo "::error::BUILD: $line"; done
             tail -20 build_log.txt; exit 1; }
           tail -3 build_log.txt
 
       - name: Ad-hoc sign (lets Apple silicon load an unsigned build)
         run: |
-          for b in build/AetherUmbra_*_artefacts/Release/AU/*.component build/AetherUmbra_*_artefacts/Release/VST3/*.vst3; do
+          for b in build/AetherUmbra_artefacts/Release/AU/*.component build/AetherUmbra_artefacts/Release/VST3/*.vst3; do
             codesign --force --deep -s - "$b"
           done
 
       - name: Package
         run: |
           mkdir -p dist
-          cp -R build/AetherUmbra_*_artefacts/Release/AU/*.component dist/
-          cp -R build/AetherUmbra_*_artefacts/Release/VST3/*.vst3 dist/
+          cp -R build/AetherUmbra_artefacts/Release/AU/*.component dist/
+          cp -R build/AetherUmbra_artefacts/Release/VST3/*.vst3 dist/
           cp THIRD-PARTY-LICENSES.txt LICENSE README.md CHANGELOG.md dist/
           # Where the source of this exact build is (GPL: a build must come with its source).
           printf 'AetherUmbra source code\n\nThis build was made from commit\n  %s\nof the public repository\n  https://github.com/%s\n\nThe complete source of this build, including the Oneiroi firmware copy and the build script:\n  https://github.com/%s/tree/%s\n\nLicence: GNU GPL version 3, see LICENSE and THIRD-PARTY-LICENSES.txt.\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_SHA" > dist/SOURCE.txt
           cat dist/SOURCE.txt
-          # The version inside each plugin must be the one in CMakeLists.txt.
+          # The version inside the plugin must be the one in CMakeLists.txt.
           WANT=$(sed -n 's/^project(AetherUmbra VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
-          for B in "AetherUmbra Test Instrument" "AetherUmbra Test Music Effect"; do
-            GOT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/$B.component/Contents/Info.plist")
-            echo "$B: version wanted $WANT, in the plugin $GOT"
-            [ "$WANT" = "$GOT" ] || { echo "::error::PACKAGE version in $B is $GOT, expected $WANT"; exit 1; }
-          done
-          # The two Audio Unit types: instrument (aumu) and music effect (aumf).
-          T1=$(/usr/libexec/PlistBuddy -c "Print :AudioComponents:0:type" "dist/AetherUmbra Test Instrument.component/Contents/Info.plist")
-          T2=$(/usr/libexec/PlistBuddy -c "Print :AudioComponents:0:type" "dist/AetherUmbra Test Music Effect.component/Contents/Info.plist")
-          echo "Audio Unit types: instrument shell $T1, music effect shell $T2"
-          [ "$T1" = "aumu" ] || { echo "::error::PACKAGE the Instrument shell is type $T1, expected aumu"; exit 1; }
-          [ "$T2" = "aumf" ] || { echo "::error::PACKAGE the Music Effect shell is type $T2, expected aumf"; exit 1; }
+          GOT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/AetherUmbra.component/Contents/Info.plist")
+          echo "AetherUmbra: version wanted $WANT, in the plugin $GOT"
+          [ "$WANT" = "$GOT" ] || { echo "::error::PACKAGE version is $GOT, expected $WANT"; exit 1; }
+          # The Audio Unit type must be instrument (aumu): Logic then offers notes and the Side Chain menu.
+          T1=$(/usr/libexec/PlistBuddy -c "Print :AudioComponents:0:type" "dist/AetherUmbra.component/Contents/Info.plist")
+          echo "Audio Unit type: $T1"
+          [ "$T1" = "aumu" ] || { echo "::error::PACKAGE the Audio Unit is type $T1, expected aumu"; exit 1; }
           cp third_party/oneiroi-firmware/SOURCE.txt dist/SOURCE-Oneiroi-firmware.txt
           cp third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md dist/CHANGES-to-Oneiroi-firmware.md
           cp third_party/oneiroi-firmware/LICENSE dist/LICENSE-Oneiroi-firmware.txt
           # Both slices present, and the minimum macOS version baked into each (should say 11.0):
           for c in dist/*.component dist/*.vst3; do echo "$c: $(lipo -archs "$c"/Contents/MacOS/*)"; done
-          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a "dist/AetherUmbra Test Instrument.component/Contents/MacOS/AetherUmbra Test Instrument" -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
+          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a "dist/AetherUmbra.component/Contents/MacOS/AetherUmbra" -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
           cp tools/install/Install-AetherUmbra.command tools/install/Uninstall-AetherUmbra.command dist/
           chmod +x dist/Install-AetherUmbra.command dist/Uninstall-AetherUmbra.command
           cat > dist/INSTALL.txt <<'TXT'
-          EASY INSTALL (the Audio Unit for Logic; the VST3 files in this folder are not installed by the script): double-click Install-AetherUmbra.command in this folder.
+          EASY INSTALL (the Audio Unit for Logic; the VST3 file in this folder is not installed by the script): double-click Install-AetherUmbra.command in this folder.
           It asks for your Mac password once. To remove: double-click Uninstall-AetherUmbra.command.
 
           Then in Logic: Settings > Plug-in Manager > Reset & Rescan Selection.
-          The Instrument is in an instrument slot (Instrument > AU Instruments > particledots > AetherUmbra Test Instrument).
-          The Music Effect is in an Audio FX slot (under Audio Units > particledots); the test checklist says where else to look.
+          AetherUmbra is an instrument: put it in an instrument slot (Instrument > AU Instruments > particledots > AetherUmbra).
+          To process the audio of another track, choose that track in the plugin's Side Chain menu (top of the plugin window in Logic).
 
           Manual install instead: copy the .component files to /Library/Audio/Plug-Ins/Components/.
           If macOS says it is from an unidentified developer: Terminal, then

@@ -355,7 +355,10 @@ public:
 
         for (size_t i = 0; i < size; i++)
         {
-            float n = noise_.Process() * noiseLevel_;
+            // AetherUmbra change: the noise level that the resonance sets is scaled by the Filter Noise control
+            // (patchCtrls_->filterNoiseLevel, which no firmware code used). At 0.5 the factor is exactly 1, so
+            // the sound is the firmware's own. See AETHERUMBRA-CHANGES.md.
+            float n = noise_.Process() * noiseLevel_ * (patchCtrls_->filterNoiseLevel * 2.f);
 
             float lIn = Clamp(leftIn[i], -3.f, 3.f);
             float rIn = Clamp(rightIn[i], -3.f, 3.f);
