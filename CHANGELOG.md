@@ -4,8 +4,11 @@
 - Window: labels about twice as large, MOD knobs larger (56 to 74 grid units), panel titles and button text larger, default
   size 1260 x 900. Layout otherwise as approved. Audio In box: added "Muting the source track does not stop the side chain."
   (Logic's side chain is taken before the source track's fader and mute; measured in the Milestone 1 test.)
-- Ambience (reverb) sound: investigated, see the Project document AetherUmbra-ambience-investigation.md. No code change yet
-  (the DelayLine.h change, the 44.1 kHz path and ARM64 versus Intel were all ruled out; cause still open).
+- Ambience (reverb): the default of the Spacetime control is now 0.6 (was 0.5). Cause of the slow "LFO-like" wobble heard in the
+  Logic test: between about 0.45 and 0.65 the firmware blends a backwards copy of the sound into the direct sound (at 0.5 about
+  73 percent), which swings the level of a held note up to 5 times, one slow cycle every 1.5 s. At 0.6 the swing is small and
+  Bryn judged the tone the purest. Parameter order and range unchanged; saved projects keep their own value. Ruled out: the
+  DelayLine.h change, the 44.1 kHz path, ARM64 versus Intel (see AetherUmbra-ambience-investigation.md).
 
 ## 0.2.0: Milestone 1 (the engine runs; result to be filled in after the Logic test)
 - The Oneiroi engine is compiled into the plugin: an AU Instrument (`aumu`) named `AetherUmbra` and a VST3. The two Milestone 0

@@ -94,7 +94,7 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     f ("ambience_volume", "Ambience Volume", 0.0f);
     f ("ambience_decay", "Ambience Decay", 0.5f);
     f ("ambience_decay_mod", "Ambience Decay Mod", 0.0f);
-    f ("ambience_spacetime", "Ambience Spacetime", 0.5f);
+    f ("ambience_spacetime", "Ambience Spacetime", 0.6f);
     f ("ambience_spacetime_mod", "Ambience Spacetime Mod", 0.0f);
     f ("ambience_autopan", "Ambience Auto-pan", 0.0f);
     // Modulation
