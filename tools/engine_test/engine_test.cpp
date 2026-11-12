@@ -5,6 +5,7 @@
 //  4. several instances at once do not disturb each other (reported; not a Milestone 1 requirement)
 //  5. Logic's tempo (the module's sync input): modulation rate, echo time, song position, tempo changes, looper stays free
 //  6. tail: how long the reverb, echo and resonator keep ringing (the number reported to Logic)
+//  7. Echo Sync and the six snap switches (Oscillator Pitch, Looper Speed, Resonator Tune, Filter Cutoff, Looper Start, Looper Length)
 // Not part of the download. Usage: aether_engine_test [folder for WAV files]
 #include <cmath>
 #include <cstdarg>
@@ -502,7 +503,36 @@ static EngineParams randomParams (Rng& g)
     p.echoRepeats = v(); p.echoRepeatsMod = v(); p.echoDensity = v(); p.echoDensityMod = v(); p.echoFilter = v();
     p.ambienceDecay = v(); p.ambienceDecayMod = v(); p.ambienceSpacetime = v(); p.ambienceSpacetimeMod = v(); p.ambienceAutoPan = v();
     p.modLevel = v(); p.modSpeed = v(); p.modType = ((int) (g.next() * 6.99f)) / 6.f;
+    p.echoSync = g.next() < 0.5f; p.snapOscPitch = g.next() < 0.5f; p.snapLooperSpeed = g.next() < 0.5f; p.snapResonatorTune = g.next() < 0.5f;
+    p.snapFilterCutoff = g.next() < 0.5f; p.snapLooperStart = g.next() < 0.5f; p.snapLooperLength = g.next() < 0.5f;
     return p;
+}
+
+static void testChaosFastTempo()
+{
+    // Found by the random-settings test: Mod type Chaos at its fastest speed with a host tempo of about 120 BPM or more made the
+    // Lorenz modulation run away to infinity, after which the output stayed invalid until the plugin was reloaded.
+    std::printf ("\n== 5b. chaos modulation at the fastest speeds with a host tempo ==\n");
+    const double rate = 48000.0;
+    for (double bpm : { 60.0, 120.0, 180.0, 300.0 })
+    for (float speed : { 0.8f, 0.92f, 0.99f })
+    {
+        Stream st; st.prepare (rate, 1024);
+        EngineParams p = withInput(); p.modLevel = 1.f; p.modType = 0.f; p.modSpeed = speed;
+        p.filterCutoffMod = 1.f; p.filterCutoff = 0.5f; p.echoDensityMod = 1.f; p.echoLevel = 0.5f; p.osc2Volume = 0.5f; p.oscUseWavetable = true; p.oscDetuneMod = 1.f;
+        st.setParams (p, 0.f, 0.f);
+        Transport t; t.bpm = bpm; st.setTransport (t);
+        std::vector<float> a (480), b (480), o1 (480), o2 (480);
+        Rng g { 77u };
+        double pk = 0;
+        for (int i = 0; i < 100 * 20; ++i)
+        {
+            for (size_t k = 0; k < 480; ++k) a[k] = b[k] = (g.next() * 2 - 1) * 0.3f;
+            st.process (a.data(), b.data(), o1.data(), o2.data(), 480);
+            for (size_t k = 0; k < 480; ++k) pk = std::max (pk, (double) std::fabs (o1[k]));
+        }
+        check (st.nonFiniteCount() == 0 && pk > 0.0, fmt ("%3.0f BPM, Mod = Chaos, speed %.2f, 20 s: no invalid numbers, sound continues (peak %.2f)", bpm, speed, pk));
+    }
 }
 
 static void testFuzz()
@@ -516,7 +546,12 @@ static void testFuzz()
         double pk = 0; std::vector<float> l (480), r (480), ol (480), orr (480);
         for (size_t b = 0; b < blocks; ++b)
         {
-            if (b % 25 == 0) { st.setParams (randomParams (g), (g.next() - 0.5f) * 0.f, (g.next() - 0.5f) * 40.f); if (g.next() < 0.1f) st.clearLooper(); }
+            if (b % 25 == 0)
+            {
+                st.setParams (randomParams (g), (g.next() - 0.5f) * 0.f, (g.next() - 0.5f) * 40.f); if (g.next() < 0.1f) st.clearLooper();
+                Transport t; t.bpm = g.next() < 0.3f ? 0.0 : 30.0 + 290.0 * g.next();      // sometimes no tempo, sometimes outside 40..300
+                st.setTransport (t);
+            }
             const float kind = g.next();
             for (int i = 0; i < 480; ++i)
             {
@@ -530,6 +565,7 @@ static void testFuzz()
             for (int i = 0; i < 480; ++i) pk = std::max ({ pk, (double) std::fabs (ol[(size_t) i]), (double) std::fabs (orr[(size_t) i]) });
         }
         check (st.nonFiniteCount() == 0 && st.underruns() == 0, fmt ("%6.0f Hz: 40 s of random settings: no invalid numbers, no underruns (peak %.1f)", rate, pk));
+        if (st.nonFiniteCount() != 0 || st.underruns() != 0) std::printf ("   fuzz detail: invalid numbers %d, underruns %d\n", (int) st.nonFiniteCount(), (int) st.underruns());
     }
 }
 
@@ -816,6 +852,7 @@ static void testTail()
     auto amb = [&] (float decay, float spacetime) { EngineParams p = b; p.ambienceLevel = 1.f; p.ambienceDecay = decay; p.ambienceSpacetime = spacetime; return p; };
     auto res = [&] (float fb, float tune) { EngineParams p = b; p.resonatorLevel = 1.f; p.resonatorFeedback = fb; p.resonatorTune = tune; return p; };
     auto ech = [&] (float rep, float dens) { EngineParams p = b; p.echoLevel = 1.f; p.echoRepeats = rep; p.echoDensity = dens; return p; };
+    auto fre = [&] (float rep, float dens) { EngineParams p = ech (rep, dens); p.echoSync = false; return p; };      // Echo Sync off (the plugin's default)
     std::vector<Case> all = {
         // covered by the reported tail
         { "reverb Decay 0.5, Spacetime 0.6 (the defaults)", amb (0.5f, 0.6f) },
@@ -831,6 +868,7 @@ static void testTail()
         { "echo Repeats 0.9, Density 0.5",                  ech (0.9f, 0.5f) },
         { "echo Repeats 0.97, Density 0",                   ech (0.97f, 0.f) },
         { "all three at once, middle settings",             [&] { EngineParams p = b; p.ambienceLevel = 1.f; p.resonatorLevel = 1.f; p.echoLevel = 1.f; return p; }() },
+        { "free echo (Echo Sync off) Repeats 0.5, Dens. 0.5", fre (0.5f, 0.5f) },
         // not covered: ring much longer or for ever (firmware design)
         { "reverb Decay 0.75, Spacetime 0.3",               amb (0.75f, 0.3f) },
         { "echo Repeats 0.7, Density 1",                    ech (0.7f, 1.f) },
@@ -842,10 +880,14 @@ static void testTail()
         { "resonator Feedback full, Tune 0.2",              res (1.f, 0.2f) },
         { "echo Repeats 0.9, Density 1",                    ech (0.9f, 1.f) },
         { "echo Repeats full, Density 0.5",                 ech (1.f, 0.5f) },
+        // Echo Sync off: the echo times reach 4 s (the stepped echo reaches 3.9 s only at its longest step), so long tails are easier to get
+        { "free echo Repeats 0.5, Density 1",               fre (0.5f, 1.f) },
+        { "free echo Repeats 0.9, Density 0.5",             fre (0.9f, 0.5f) },
+        { "free echo Repeats 0.9, Density 1",               fre (0.9f, 1.f) },
     };
     auto show = [&] (double t) { return t >= kMax ? fmt (">= %.0f", kMax) : fmt ("%.1f", t); };
     // The settings the reported tail must cover (at Logic's tempo 40, 60 and 120 BPM; the plugin treats slower tempos as 40).
-    const int nCovered = 13;       // the first entries of the list below
+    const int nCovered = 14;       // the first entries of the list below
     std::printf ("   reported tail: %.0f s\n", kTailSeconds);
     std::printf ("   %-48s %8s %8s %8s %8s\n", "setting (seconds until -80 dB)", "120 BPM", "60 BPM", "40 BPM", "own clk");
     double worst = 0;
@@ -865,6 +907,256 @@ static void testTail()
     check (worst > 1.0 && worst < kTailSeconds && worst > 0.8 * kTailSeconds, fmt ("reported tail %.0f s is the measured %.1f s plus a margin (no more than 25 percent more)", kTailSeconds, worst));
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------
+// 7. Echo Sync and the six snap switches (new in 1.1.0)
+
+// First echo of a click (like firstEchoSeconds, but with the given parameters and a constant tempo; bpm 0 = none known).
+static double firstEchoWith (EngineParams p, double bpm)
+{
+    const double rate = 48000.0;
+    Stream st; st.prepare (rate, 1024); st.setParams (p, 0.f, 0.f);
+    auto in = makeSilence (rate, 6.0);
+    const size_t clickAt = (size_t) (3.0 * rate);
+    in.l[clickAt] = in.r[clickAt] = 0.8f;
+    Audio out; out.rate = rate; out.l.resize (in.size()); out.r.resize (in.size());
+    for (size_t pos = 0; pos < in.size(); pos += 480)
+    {
+        if (bpm > 0) { Transport t; t.bpm = bpm; st.setTransport (t); }
+        st.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, (int) std::min<size_t> (480, in.size() - pos));
+    }
+    const size_t lat = (size_t) st.latencySamples();
+    for (size_t i = clickAt + lat + 300; i < out.size(); ++i)
+        if (std::fabs (out.l[i]) > 0.02f) return (double) (i - clickAt - lat) / rate;
+    return -1.0;
+}
+
+// Times at which a looped burst starts (gaps of at least 3 ms of silence between bursts), from sample 'from' on, in seconds.
+static std::vector<double> burstStarts (const Audio& a, double from)
+{
+    std::vector<double> t; size_t quiet = 1000000;
+    for (size_t i = (size_t) (from * a.rate); i < a.size(); ++i)
+    {
+        if (std::fabs (a.l[i]) > 0.05f) { if (quiet > (size_t) (0.003 * a.rate)) t.push_back ((double) i / a.rate); quiet = 0; }
+        else ++quiet;
+    }
+    return t;
+}
+
+// Clears the looper (the firmware empties its buffer step by step, so nothing is recorded for the first 2 s), then records 0.55 s
+// of silence with one noise burst of 96 samples 'burstAtSeconds' after recording started (buffer position = burstAtSeconds * 48000).
+// The result has 2 s of lead-in; 'seconds' is the time after the start of recording.
+static Audio loopWithBurst (EngineParams p, double bpm, double burstAtSeconds, double seconds)
+{
+    const double rate = 48000.0, lead = 2.0;
+    Stream st; st.prepare (rate, 480); st.setParams (p, 0.f, 0.f);
+    auto in = makeSilence (rate, lead + seconds);
+    Rng g { 77u };
+    const size_t b0 = (size_t) ((lead + burstAtSeconds) * rate);
+    for (size_t i = b0; i < b0 + 96; ++i) in.l[i] = in.r[i] = (g.next() * 2.f - 1.f) * 0.8f;
+    st.clearLooper();
+    return runSeconds (st, rate, lead + seconds, [&] (double t, EngineParams& q)
+    {
+        q = p; q.looperRecording = t >= lead && t < lead + 0.55;
+        if (bpm > 0) { Transport tr; tr.bpm = bpm; st.setTransport (tr); }
+        return true;
+    }, &in);
+}
+
+static void testSnapAndSync()
+{
+    std::printf ("\n== 7. Echo Sync and the snap switches (new in 1.1.0) ==\n");
+    const double rate = 48000.0;
+
+    // ---- Echo Sync ----
+    {
+        EngineParams on = withInput(); on.echoLevel = 1.f; on.echoRepeats = 0.3f; on.echoDensity = 0.8f; on.echoSync = true;
+        EngineParams off = on; off.echoSync = false;
+        const double s60 = firstEchoWith (on, 60.0), s120 = firstEchoWith (on, 120.0);
+        const double f60 = firstEchoWith (off, 60.0), f120 = firstEchoWith (off, 120.0), fNone = firstEchoWith (off, 0.0);
+        check (s60 > 0 && s120 > 0 && std::fabs (s60 / s120 - 2.0) < 0.05, fmt ("Echo Sync on: the echo follows the tempo (first repeat %.3f s at 60 BPM, %.3f s at 120 BPM)", s60, s120));
+        check (f60 > 0.2 && f120 > 0.2 && std::fabs (f60 - f120) < 0.002, fmt ("Echo Sync off: the echo does not follow the tempo (%.3f s at 60 BPM, %.3f s at 120 BPM)", f60, f120));
+        check (fNone > 0.2 && std::fabs (f120 - fNone) < 0.01 * fNone, fmt ("Echo Sync off with Logic's tempo = the module without a clock: %.3f s and %.3f s without any tempo", f120, fNone));
+        check (f120 > 4.0 * s120, fmt ("Echo Sync off: the free echo is much longer (%.3f s) than the clocked one (%.3f s) at this Density", f120, s120));
+        // Density is smooth when off: two close positions give two different times (in the clocked mode they share a step)
+        EngineParams a = off, b = off; a.echoDensity = 0.50f; b.echoDensity = 0.53f;
+        const double ta = firstEchoWith (a, 120.0), tb = firstEchoWith (b, 120.0);
+        EngineParams a2 = on, b2 = on; a2.echoDensity = 0.50f; b2.echoDensity = 0.53f;
+        const double sa = firstEchoWith (a2, 120.0), sb = firstEchoWith (b2, 120.0);
+        check (ta > 0 && tb > 0 && tb / ta > 1.03, fmt ("Echo Sync off: Density is smooth (0.50 gives %.3f s, 0.53 gives %.3f s)", ta, tb));
+        check (sa > 0 && sb > 0 && std::fabs (sa - sb) < 0.002, fmt ("Echo Sync on: Density moves in steps (0.50 and 0.53 both %.3f s / %.3f s)", sa, sb));
+        // maximum: the free echo reaches about 4 s
+        EngineParams m = off; m.echoDensity = 1.f; m.echoRepeats = 0.f;
+        Stream st; st.prepare (rate, 1024); st.setParams (m, 0.f, 0.f);
+        auto in = makeSilence (rate, 9.0); in.l[(size_t) rate] = in.r[(size_t) rate] = 0.8f;
+        Audio out; out.rate = rate; out.l.resize (in.size()); out.r.resize (in.size());
+        for (size_t pos = 0; pos < in.size(); pos += 480)
+        {
+            Transport t; t.bpm = 120.0; st.setTransport (t);
+            st.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, (int) std::min<size_t> (480, in.size() - pos));
+        }
+        double last = 0; for (size_t i = (size_t) rate + 500; i < out.size(); ++i) if (std::fabs (out.r[i]) > 0.03f) last = (double) (i - (size_t) rate) / rate;   // the right channel has the longest tap
+        check (last > 3.5 && last < 4.3, fmt ("Echo Sync off, Density full: the last repeat comes %.2f s after the click (expected about 3.9 s)", last));
+        // modulation and auto-pan still follow the tempo when Echo Sync is off
+        {
+            Stream s2; s2.prepare (rate, 1024);
+            EngineParams p = withInput(); p.echoSync = false; p.modLevel = 1.f; p.modSpeed = 0.5f; p.modType = 1.f / 6; s2.setParams (p, 0.f, 0.f);
+            auto n = makeNoise (rate, 40.0, 0.1f);
+            std::vector<float> mv;
+            for (size_t pos = 0; pos + 480 <= n.size(); pos += 480)
+            {
+                std::vector<float> o1 (480), o2 (480); Transport t; t.bpm = 120.0; s2.setTransport (t);
+                s2.process (n.l.data() + pos, n.r.data() + pos, o1.data(), o2.data(), 480); mv.push_back (s2.modulationValue());
+            }
+            const size_t from = (size_t) (10.0 * rate / 480);
+            double mean = 0; for (size_t i = from; i < mv.size(); ++i) mean += mv[i]; mean /= (double) (mv.size() - from);
+            int cross = 0; size_t first = 0, lastc = 0;
+            for (size_t i = from + 1; i < mv.size(); ++i) if (mv[i - 1] < mean && mv[i] >= mean) { if (cross == 0) first = i; lastc = i; ++cross; }
+            const double hz = cross < 3 ? 0.0 : (double) (cross - 1) / (((double) (lastc - first)) * 480.0 / rate);
+            check (std::fabs (hz - 2.0) < 0.08, fmt ("Echo Sync off: the modulation still follows the tempo (%.3f Hz at 120 BPM, expected 2.000)", hz));
+        }
+        // switching Echo Sync on and off while playing: no invalid numbers, no runaway
+        {
+            Stream s3; s3.prepare (rate, 1024);
+            EngineParams p = withInput(); p.echoLevel = 1.f; p.echoRepeats = 0.8f; p.echoDensity = 0.6f; p.looperVolume = 0.f; s3.setParams (p, 0.f, 0.f);
+            auto n = makeNoise (rate, 20.0, 0.3f, 9);
+            double pk = 0;
+            auto o = runSeconds (s3, rate, 20.0, [&] (double t, EngineParams& q) { q = p; q.echoSync = ((int) (t / 1.3)) % 2 == 0; q.echoDensity = 0.3f + 0.4f * (float) std::fabs (std::sin (t)); Transport tr; tr.bpm = 90.0 + 30.0 * std::sin (t * 0.3); s3.setTransport (tr); return true; }, &n);
+            pk = peak (o.l);
+            check (s3.nonFiniteCount() == 0 && pk < 3.0, fmt ("Echo Sync switched on and off every 1.3 s for 20 s: no invalid numbers, peak %.2f", pk));
+        }
+    }
+
+    // ---- Oscillator Pitch ----
+    {
+        auto hz = [&] (float knob, bool snap)
+        {
+            EngineParams p = silent(); p.osc1Volume = 1.f; p.oscOctave = 5; p.noteOffset = 0.f; p.oscPitch = knob; p.snapOscPitch = snap;
+            Stream st; st.prepare (rate, 480); st.setParams (p, 0.f, 0.f);
+            return toneHz (runSeconds (st, rate, 3.0, [] (double, EngineParams&) { return false; }), 0.5, 3.0);
+        };
+        const double c4 = 261.626;
+        for (int semis : { -6, -3, 0, 1, 4, 6 })
+        {
+            const float knob = 0.5f + ((float) semis + 0.36f) / 12.f;        // 0.36 of a semitone above the grid
+            const double on = hz (std::min (1.f, knob), true), off = hz (std::min (1.f, knob), false);
+            const double expect = c4 * std::pow (2.0, semis / 12.0);
+            const double expectOff = c4 * std::pow (2.0, std::min (6.0, semis + 0.36) / 12.0);
+            check (std::fabs (on / expect - 1.0) < 0.004 && (semis == 6 || std::fabs (off / expectOff - 1.0) < 0.004 && std::fabs (off / on - 1.0) > 0.012),
+                   fmt ("Oscillator Pitch snap, knob %+d.36 semitones: on %.2f Hz (whole semitone, expected %.2f), off %.2f Hz (free)", semis, on, expect, off));
+        }
+        // the Pitch Mod still moves the pitch when the knob is snapped
+        EngineParams p = silent(); p.osc1Volume = 1.f; p.oscOctave = 5; p.snapOscPitch = true; p.modLevel = 1.f; p.modType = 1.f / 6; p.modSpeed = 0.2f; p.oscPitchMod = 1.f;
+        Stream st; st.prepare (rate, 480); st.setParams (p, 0.f, 0.f);
+        auto a = runSeconds (st, rate, 6.0, [] (double, EngineParams&) { return false; });
+        double lo = 1e9, hi = 0; for (double t = 1.0; t < 5.5; t += 0.25) { const double f = toneHz (a, t, t + 0.25); if (f > 0) { lo = std::min (lo, f); hi = std::max (hi, f); } }
+        check (hi / lo > 1.1, fmt ("Pitch Mod keeps working with Pitch snap on (pitch swings from %.1f to %.1f Hz)", lo, hi));
+    }
+
+    // ---- Looper Speed ----
+    {
+        auto ratio = [&] (float knob, bool snap)
+        {
+            EngineParams p = silent(); p.looperVolume = 1.f; p.looperSpeed = knob; p.snapLooperSpeed = snap;
+            Stream st; st.prepare (rate, 480); st.setParams (p, 0.f, 0.f);
+            auto in = makeSine (rate, 12.0, { { 330.0, 0.5 } });
+            st.clearLooper();
+            // the tone fills the whole 5.46 s loop, so every speed finds it; the speed under test starts after recording
+            auto a = runSeconds (st, rate, 12.0, [&] (double t, EngineParams& q) { q = p; q.looperRecording = t < 5.4; q.looperSpeed = t < 5.5 ? 0.75f : knob; return true; }, &in);
+            // median of several short windows (a window that crosses the loop's wrap point would count the seam)
+            std::vector<double> r; for (double t = 7.0; t < 11.4; t += 0.4) { const double f = toneHz (a, t, t + 0.4); if (f > 0) r.push_back (f / 330.0); }
+            std::sort (r.begin(), r.end());
+            return r.empty() ? 0.0 : r[r.size() / 2];
+        };
+        const float zero = 0.51f;
+        auto knobFor = [&] (float v) { return v < 0.f ? (v + 2.f) * zero / 2.f : zero + v * (0.99f - zero) / 2.f; };
+        struct C { float v; double expect; } cases[] = { { 1.29f, std::pow (2.0, 4.0 / 12) }, { 0.69f, std::pow (2.0, -6.0 / 12) }, { 1.55f, std::pow (2.0, 8.0 / 12) }, { -0.69f, std::pow (2.0, -6.0 / 12) } };
+        for (auto c : cases)
+        {
+            const double on = ratio (knobFor (c.v), true), off = ratio (knobFor (c.v), false);
+            check (std::fabs (on / c.expect - 1.0) < 0.006 && std::fabs (off / std::fabs (c.v) - 1.0) < 0.006 && std::fabs (on / off - 1.0) > 0.015,
+                   fmt ("Looper Speed snap, speed %+.2f: on %.4fx (expected 2^(n/12) = %.4f), off %.4fx (free)", c.v, on, c.expect, off));
+        }
+        const double one = ratio (knobFor (1.02f), true);
+        check (std::fabs (one - 1.0) < 0.006, fmt ("Looper Speed snap: the firmware's lock around 1x stays (speed 1.02 plays %.4fx)", one));
+    }
+
+    // ---- Resonator Tune and Filter Cutoff: a knob anywhere inside a cell sounds exactly like the cell's centre ----
+    {
+        auto render = [&] (EngineParams p)
+        {
+            Stream st; st.prepare (rate, 480); st.setParams (p, 0.f, 0.f);
+            auto in = makeNoise (rate, 2.0, 0.3f, 11);
+            return runSeconds (st, rate, 2.0, [] (double, EngineParams&) { return false; }, &in);
+        };
+        auto same = [&] (const Audio& a, const Audio& b) { double d = 0; for (size_t i = 0; i < a.size(); ++i) d = std::max (d, (double) std::fabs (a.l[i] - b.l[i])); return d; };
+        {   // Resonator: range 24 at Dissonance 0, so tune = (n + 24) / 48; n = 3 is 0.5625
+            EngineParams p = silent(); p.inputVolume = 0.f; p.resonatorLevel = 1.f; p.resonatorFeedback = 0.8f; p.resonatorDissonance = 0.f; p.snapResonatorTune = true;
+            EngineParams centre = p, near1 = p, near2 = p, other = p, freeA = p, freeB = p;
+            centre.resonatorTune = 0.5625f; near1.resonatorTune = 0.5625f + 0.009f; near2.resonatorTune = 0.5625f - 0.009f; other.resonatorTune = 0.5625f + 1.f / 48.f;
+            freeA = centre; freeA.snapResonatorTune = false; freeB = near1; freeB.snapResonatorTune = false;
+            p.inputVolume = 0.f;
+            for (auto* q : { &centre, &near1, &near2, &other, &freeA, &freeB }) q->inputVolume = 0.5f;
+            const auto ac = render (centre), a1 = render (near1), a2 = render (near2), ao = render (other), fa = render (freeA), fb = render (freeB);
+            check (same (ac, a1) == 0.0 && same (ac, a2) == 0.0, fmt ("Resonator Tune snap: inside one semitone cell the sound is identical (differences %.1e, %.1e)", same (ac, a1), same (ac, a2)));
+            check (same (ac, ao) > 0.01, fmt ("Resonator Tune snap: the next semitone sounds different (difference %.3f)", same (ac, ao)));
+            check (same (ac, fa) < 1e-3 && same (fa, fb) > 0.002, fmt ("Resonator Tune: snap off is free (knob 0.009 away differs by %.3f), snap on at the cell centre equals free (%.1e)", same (fa, fb), same (ac, fa)));
+            // with Dissonance up the range is smaller (integer, as in the firmware): 20 at 0.5, so tune = (n + 24) / 44
+            EngineParams d = p; d.resonatorDissonance = 0.5f; d.inputVolume = 0.5f; d.resonatorTune = 28.f / 44.f; EngineParams d2 = d; d2.resonatorTune = 28.f / 44.f + 0.008f;
+            check (same (render (d), render (d2)) == 0.0, "Resonator Tune snap: the cell size follows the Dissonance range (24 to 16 semitones up)");
+        }
+        {   // Filter: cutoff = 10 Hz * 2200^value. A3 = 220 Hz
+            const float a3 = (float) (std::log (22.0) / std::log (2200.0));
+            EngineParams p = withInput(); p.filterResonance = 0.3f; p.snapFilterCutoff = true;
+            EngineParams centre = p, near1 = p, near2 = p, other = p, freeA = p, freeB = p;
+            centre.filterCutoff = a3; near1.filterCutoff = a3 + 0.003f; near2.filterCutoff = a3 - 0.003f; other.filterCutoff = a3 + 0.009f;
+            freeA = centre; freeA.snapFilterCutoff = false; freeB = near1; freeB.snapFilterCutoff = false;
+            const auto ac = render (centre), a1 = render (near1), a2 = render (near2), ao = render (other), fa = render (freeA), fb = render (freeB);
+            check (same (ac, a1) == 0.0 && same (ac, a2) == 0.0, fmt ("Filter Cutoff snap: inside one note cell the sound is identical (differences %.1e, %.1e)", same (ac, a1), same (ac, a2)));
+            check (same (ac, ao) > 0.005, fmt ("Filter Cutoff snap: the next note sounds different (difference %.3f)", same (ac, ao)));
+            check (same (ac, fa) < 1e-3 && same (fa, fb) > 0.001, fmt ("Filter Cutoff: snap off is free (differs by %.3f), snap on at the note equals free (%.1e)", same (fa, fb), same (ac, fa)));
+            // fully open and fully closed are left alone
+            EngineParams o1 = p, o2 = p; o1.filterCutoff = 1.f; o2.filterCutoff = 1.f; o2.snapFilterCutoff = false;
+            check (same (render (o1), render (o2)) == 0.0, "Filter Cutoff snap: fully open stays fully open");
+        }
+    }
+
+    // ---- Looper Length and Start: beat divisions of the host tempo ----
+    {
+        auto intervals = [&] (double bpm, bool snap, float knob)
+        {
+            EngineParams p = silent(); p.looperVolume = 1.f; p.looperLength = knob; p.snapLooperLength = snap;
+            auto a = loopWithBurst (p, bpm, 0.02, 4.0);
+            auto t = burstStarts (a, 3.0);
+            double sum = 0; int n = 0; double lo = 1e9, hi = 0;
+            for (size_t i = 1; i < t.size(); ++i) { const double d = t[i] - t[i - 1]; sum += d; ++n; lo = std::min (lo, d); hi = std::max (hi, d); }
+            struct R { double mean, lo, hi; int n; };
+            return R { n ? sum / n : 0.0, lo, hi, n };
+        };
+        // knob for 14400 samples (0.3 s): 367 + (262144 - 367) * k^3
+        const float k = (float) std::cbrt ((14400.0 - 367.0) / (262144.0 - 367.0));
+        const auto s120 = intervals (120.0, true, k), s100 = intervals (100.0, true, k), off120 = intervals (120.0, false, k), none = intervals (0.0, true, k);
+        check (s120.n > 5 && std::fabs (s120.mean - 0.250) < 0.0006 && s120.hi - s120.lo < 0.0006, fmt ("Looper Length snap, 120 BPM: the loop lasts %.4f s (1/16 note = 0.125 s, so 2 steps = 0.250), %d repeats", s120.mean, s120.n));
+        check (s100.n > 5 && std::fabs (s100.mean - 0.300) < 0.0006, fmt ("Looper Length snap, 100 BPM: the loop lasts %.4f s (2 steps of 0.150 s = 0.300)", s100.mean));
+        check (off120.n > 5 && std::fabs (off120.mean - 0.250) > 0.02, fmt ("Looper Length snap off: free length (%.4f s)", off120.mean));
+        check (none.n > 5 && std::fabs (none.mean - off120.mean) < 0.0006, fmt ("Looper Length snap on, no tempo from the host: free, like off (%.4f s against %.4f s)", none.mean, off120.mean));
+
+        // Start: a burst at buffer position about 6500; a loop of 30 ms is heard only if its start lies at or just before the burst
+        auto heard = [&] (double bpm, bool snap, float startSamples)
+        {
+            EngineParams p = silent(); p.looperVolume = 1.f; p.looperStart = startSamples / 262143.f; p.snapLooperStart = snap;
+            p.looperLength = (float) std::cbrt ((1440.0 - 367.0) / (262144.0 - 367.0));
+            auto a = loopWithBurst (p, bpm, 6500.0 / rate, 3.0);
+            return rms (a.l, (size_t) (3.5 * rate), a.size());
+        };
+        const double on1 = heard (120.0, true, 4000.f), on2 = heard (120.0, true, 8500.f), off1 = heard (120.0, false, 4000.f), off2 = heard (120.0, false, 8500.f), n1 = heard (0.0, true, 4000.f);
+        check (on1 > 0.02 && on2 > 0.02, fmt ("Looper Start snap, 120 BPM: starts 4000 and 8500 samples both move to 6000 (1/16 note = 6000 samples) and the burst at 6500 is heard (%.3f, %.3f)", on1, on2));
+        check (off1 < 0.005 && off2 < 0.005, fmt ("Looper Start snap off: the same knob positions start elsewhere and the burst is not heard (%.4f, %.4f)", off1, off2));
+        check (n1 < 0.005, fmt ("Looper Start snap on, no tempo from the host: free, like off (%.4f)", n1));
+    }
+    std::printf ("   section 7 done\n");
+}
+
 int main (int argc, char** argv)
 {
     flushDenormals();
@@ -879,12 +1171,14 @@ int main (int argc, char** argv)
         testOscillators (outDir);
         testLooper (outDir);
         testSections (outDir);
-        testFuzz();
+        testChaosFastTempo(); testFuzz();
         testInstances();
     }
     if (one == "sweep") { sweepDensity (120.0); sweepDensity (0.0); return 0; }
+    if (one == "fuzz") { testChaosFastTempo(); testFuzz(); }
     if (one.empty() || one == "tempo") testTempo();
     if (one.empty() || one == "tail") testTail();
+    if (one.empty() || one == "snap") testSnapAndSync();
     std::printf ("\n%s\n", failures == 0 ? "RESULT - all engine checks passed" : "RESULT - SOME ENGINE CHECKS FAILED");
     return failures == 0 ? 0 : 1;
 }

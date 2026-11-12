@@ -8,8 +8,20 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 1.0.0, Milestone 2 (the finished plugin; tested and passed on both Macs, with one open note on the Echo, see below). AetherUmbra is an AU **Instrument** (plus a VST3
-from the same code). It makes sound by itself (sine, supersaw or wavetable oscillator, looper), takes its pitch from MIDI notes
+Version 1.1.0: a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; the Logic test of 1.1.0 on the M4 Mac mini is still to be done (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
+from the same code).
+
+New in 1.1.0 (seven new parameters, 56 to 62, at the end of the list; the window has a small on/off button for each in the title bar of its panel):
+- **Echo Sync** (default off). Off: the Echo is free, like the module without a clock cable: Density is smooth (10 ms to about 4 s, with pitch-shifting
+  sweeps). On: Density moves in the nine tempo steps of Logic's tempo (1/64 to one beat) as in 1.0.0. Modulation and Ambience auto-pan follow Logic's tempo either way.
+  Longer sync steps (2 and 4 beats) were not requested and are not there.
+- **Snap switches**, one per knob, on/off. The knob value moves onto a grid; Mod amounts and Randomise keep working (with Looper Start and Length the grid applies to the knob plus Mod):
+  - Oscillator Pitch snap (default **on**): whole semitones.
+  - Looper Speed snap (off): speeds 2^(n/12), forward and reverse, up to 2x; the firmware's locked zones at 0x, 1x and -1x stay.
+  - Resonator Tune snap (off): whole semitones (about -24 to +24; the range shrinks with Dissonance as in the firmware; the other two poles keep their own offsets).
+  - Filter Cutoff snap (off): musical notes (equal temperament, A = 440 Hz); fully open and fully closed stay where they are.
+  - Looper Start snap and Looper Length snap (off): 1/16-note divisions of Logic's tempo (a quarter of a beat), as exact sample positions; they need a tempo from Logic and are free when there is none.
+- Saved projects from 1.0.0 open with the new defaults: Echo Sync off and Oscillator Pitch snap on. It makes sound by itself (sine, supersaw or wavetable oscillator, looper), takes its pitch from MIDI notes
 (the last note played, held like a V/Oct voltage), and processes the audio of another Logic track chosen in the plugin's
 **Side Chain** menu. Looper, filter, resonator, echo, ambience, the internal modulation, Randomise and Undo/Redo all work.
 
@@ -25,12 +37,14 @@ New in 1.0.0:
 Tail: the reverb, echo and resonator are measured as the time until the sound is 80 dB down after a noise burst, at 40, 60
 and 120 BPM. Normal settings die away in at most 10.5 s (echo Repeats 0.9, Density 0.5, 40 BPM), so 12 s is reported. A few
 settings ring much longer or for ever by the firmware's design (reverb Decay at full, resonator Feedback 0.9 and up, echo
-Repeats at full); Logic cuts those at 12 s when it bounces, so use a longer bounce tail or leave the plugin playing.
+Repeats at full); Logic cuts those at 12 s when it bounces, so use a longer bounce tail or leave the plugin playing. With **Echo Sync off**
+(the default) the echo times reach 4 s, so the echo rings longer than with the stepped echo: the default settings (Repeats 0.5, Density 0.5) die away in
+6.8 s and are covered; Repeats 0.5 with Density full needs 24 s and Repeats 0.9 with Density 0.5 needs 34 s (not covered).
 
 Things that differ from the module:
-- With Logic's tempo the **Echo Density** knob works in the firmware's clocked way: steps from 1/64 of a beat to one beat (at 120 BPM: up to 0.5 s),
-  so the repeats are close together. The module without a clock cable has a smooth, much longer Density (up to about 4 s, with pitch-shifting
-  sweeps). A free (unsynced) Echo is planned as a fix (see CHANGELOG).
+- With **Echo Sync** on and Logic's tempo, the **Echo Density** knob works in the firmware's clocked way: steps from 1/64 of a beat to one beat (at 120 BPM: up to 0.5 s),
+  so the repeats are close together. With Echo Sync off (the default since 1.1.0) it is the module's free echo, smooth up to about 4 s. (The module's free mode takes its
+  longest time from the looper's cycle; AetherUmbra keeps it at 4 s whenever Logic gives a tempo.)
 - The **Wavetable** oscillator only sounds when the looper holds a recording (the same on the module).
 - The **Filter Noise** knob is new: the firmware has a noise level in its filter but no control for it. At the middle
   position the sound is exactly the firmware's (the noise is only heard when Resonance is above about 0.9, as on the module).
@@ -55,8 +69,9 @@ Three milestones: 0 (done: two empty shells, found the right plugin type), 1 (do
 2 (this version: Logic's tempo, tail, final window, licence check; tested on both Macs with the checklist in the CHANGELOG).
 
 ## Source and licence
-- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). Four small changes
-  (Filter Noise, a memory-safety fix in the delay line, the echo following tempo changes, the looper not restarting on the clock); changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
+- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). Small changes
+  (Filter Noise, a memory-safety fix in the delay line, the echo following tempo changes, the looper not restarting on the clock, and in 1.1.0 the new
+  fields in Commons.h, Echo Sync in Echo.h and the beat-division Start / Length in Looper.h); changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
   file on every build.
 - `src`: AetherUmbra's own code (the plugin, the window, the engine wrapper in `src/engine`, the OWL stand-ins in `src/engine/shim`).
 - `third_party/owlprogram`: the OpenWare / OwlProgram headers the firmware needs, unmodified (GPL).

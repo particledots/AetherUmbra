@@ -110,6 +110,15 @@ inline juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     // Added at the end so Logic can automate the two buttons: going from off to on does it once; the plugin switches it off again.
     b ("randomise", "Randomise", false);
     b ("undo_redo", "Undo/Redo Random", false);
+    // Added in 1.1.0 (parameters 56 to 62), at the end as always. Echo Sync: off = free echo with a smooth Density (like the module with
+    // no clock cable); on = Density steps follow Logic's tempo. Snap switches: one per knob, see Engine (AetherEngine.cpp).
+    b ("echo_sync", "Echo Sync", false);
+    b ("snap_osc_pitch", "Oscillator Pitch Snap", true);
+    b ("snap_looper_speed", "Looper Speed Snap", false);
+    b ("snap_resonator_tune", "Resonator Tune Snap", false);
+    b ("snap_filter_cutoff", "Filter Cutoff Snap", false);
+    b ("snap_looper_start", "Looper Start Snap", false);
+    b ("snap_looper_length", "Looper Length Snap", false);
     return l;
 }
 
@@ -147,6 +156,13 @@ inline aether::EngineParams toEngine (const juce::AudioProcessorValueTreeState& 
     p.ambienceAutoPan = v ("ambience_autopan");
     p.modLevel = v ("mod_level"); p.modSpeed = v ("mod_speed");
     p.modType = v ("mod_type") / 6.f;                          // 7 shapes
+    p.echoSync = v ("echo_sync") > 0.5f;
+    p.snapOscPitch = v ("snap_osc_pitch") > 0.5f;
+    p.snapLooperSpeed = v ("snap_looper_speed") > 0.5f;
+    p.snapResonatorTune = v ("snap_resonator_tune") > 0.5f;
+    p.snapFilterCutoff = v ("snap_filter_cutoff") > 0.5f;
+    p.snapLooperStart = v ("snap_looper_start") > 0.5f;
+    p.snapLooperLength = v ("snap_looper_length") > 0.5f;
     return p;
 }
 

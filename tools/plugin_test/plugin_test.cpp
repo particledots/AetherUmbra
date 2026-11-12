@@ -131,10 +131,26 @@ int main (int argc, char** argv)
     // ---- parameters ----
     {
         int n = proc.getParameters().size();
-        check (n == 55, "parameter count is " + juce::String (n));
+        check (n == 62, "parameter count is " + juce::String (n) + " (55 from version 1.0.0, plus Echo Sync and six snap switches)");
         check (proc.apvts.getParameter ("input_volume") == proc.getParameters().getFirst(), "first parameter is Input Volume (order is fixed from Milestone 1)");
-        check (proc.getParameters()[n - 2] == proc.apvts.getParameter ("randomise") && proc.getParameters().getLast() == proc.apvts.getParameter ("undo_redo"),
-               "Randomise and Undo/Redo are the last two parameters (new ones are only ever added at the end)");
+        check (proc.getParameters()[54] == proc.apvts.getParameter ("undo_redo") && proc.getParameters()[53] == proc.apvts.getParameter ("randomise"),
+               "Randomise and Undo/Redo are still parameters 54 and 55 (new ones are only ever added at the end)");
+        {
+            const char* added[] = { "echo_sync", "snap_osc_pitch", "snap_looper_speed", "snap_resonator_tune", "snap_filter_cutoff", "snap_looper_start", "snap_looper_length" };
+            const char* names[] = { "Echo Sync", "Oscillator Pitch Snap", "Looper Speed Snap", "Resonator Tune Snap", "Filter Cutoff Snap", "Looper Start Snap", "Looper Length Snap" };
+            const bool defaults[] = { false, true, false, false, false, false, false };
+            bool order = true, def = true, nameOk = true;
+            for (int i = 0; i < 7; ++i)
+            {
+                order = order && proc.getParameters()[55 + i] == proc.apvts.getParameter (added[i]);
+                auto* b = dynamic_cast<juce::AudioParameterBool*> (proc.apvts.getParameter (added[i]));
+                def = def && b != nullptr && (b->get() == defaults[i]);
+                nameOk = nameOk && b != nullptr && b->getName (64) == names[i];
+            }
+            check (order, "parameters 56 to 62 are Echo Sync, then the snap switches Oscillator Pitch, Looper Speed, Resonator Tune, Filter Cutoff, Looper Start, Looper Length");
+            check (def, "defaults: Echo Sync off, Oscillator Pitch snap on, the other five snap switches off");
+            check (nameOk, "names of the seven new parameters as listed in the scope");
+        }
         check (proc.apvts.getParameter ("filter_noise") != nullptr, "the Filter Noise parameter exists");
         bool allThere = true, allAutomatable = true;
         for (auto* p : proc.getParameters())
@@ -336,6 +352,61 @@ int main (int argc, char** argv)
         }
     }
 
+    // ---- Echo Sync and the snap switches, through the plugin ----
+    {
+        FakePlayHead head;
+        auto render = [&] (AetherProcessor& p, double bpm, int blocks, std::vector<float>& out)
+        {
+            head.bpm = bpm; head.hasBpm = bpm > 0.0; head.ppq = 0.0; head.playing = true;
+            p.setPlayHead (&head);
+            prepare (p, 48000.0, 512);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < blocks; ++b)
+            {
+                juce::AudioBuffer<float> buf (2, 512); fillSignal (buf, b * 512);
+                p.processBlock (buf, midi);
+                head.ppq += head.bpm / 60.0 * 512.0 / 48000.0;
+                for (int i = 0; i < 512; ++i) out.push_back (buf.getSample (0, i));
+            }
+            p.setPlayHead (nullptr);
+        };
+        auto echoOnly = [&] (bool sync, double bpm, std::vector<float>& out)
+        {
+            AetherProcessor p;
+            setParam (p, "osc1_volume", 0.f); setParam (p, "echo_volume", 1.f); setParam (p, "echo_repeats", 0.6f); setParam (p, "echo_density", 0.7f);
+            setParam (p, "echo_sync", sync ? 1.f : 0.f);
+            render (p, bpm, 80, out);
+        };
+        std::vector<float> off60, off120, on60, on120, offNone;
+        echoOnly (false, 60.0, off60); echoOnly (false, 120.0, off120); echoOnly (true, 60.0, on60); echoOnly (true, 120.0, on120); echoOnly (false, 0.0, offNone);
+        check (off60 == off120, "Echo Sync off (the default): the echo is the same at 60 and 120 BPM");
+        check (on60 != on120, "Echo Sync on: the echo follows Logic's tempo");
+        double dOff = 0; for (size_t i = 0; i < off120.size(); ++i) dOff += std::abs (off120[i] - on120[i]);
+        check (dOff / (double) off120.size() > 1e-3, "Echo Sync off and on sound different at the same tempo");
+        double dNone = 0; for (size_t i = 0; i < off120.size(); ++i) dNone += std::abs (off120[i] - offNone[i]);
+        check (dNone / (double) off120.size() < 0.03 * (rms (off120, 0, off120.size()) + 1e-6), "Echo Sync off: with Logic's tempo it sounds like with no tempo (the free echo)");
+
+        auto sine = [&] (float knob, bool snap, std::vector<float>& out)
+        {
+            AetherProcessor p;
+            setParam (p, "osc_pitch", knob); setParam (p, "snap_osc_pitch", snap ? 1.f : 0.f);
+            render (p, 120.0, 40, out);
+        };
+        std::vector<float> onC, onNear, offC, offNear, onNext;
+        sine (0.5f, true, onC); sine (0.5f + 0.3f / 12.f, true, onNear); sine (0.5f, false, offC); sine (0.5f + 0.3f / 12.f, false, offNear); sine (0.5f + 0.8f / 12.f, true, onNext);
+        check (onC == onNear, "Oscillator Pitch snap (on by default): a Pitch knob 0.3 semitone off the grid sounds exactly like the grid position");
+        check (offC != offNear, "Oscillator Pitch snap off: the same knob position gives a different, free pitch");
+        check (onNext != onC, "Oscillator Pitch snap: 0.8 semitone up moves to the next semitone");
+        for (const char* id : { "snap_looper_speed", "snap_resonator_tune", "snap_filter_cutoff", "snap_looper_start", "snap_looper_length" })
+        {
+            AetherProcessor p; std::vector<float> a, b;
+            setParam (p, "looper_volume", 0.f); setParam (p, id, 1.f);
+            render (p, 120.0, 30, a);
+            bool fin = true; for (float v : a) fin = fin && std::isfinite (v);
+            check (fin && rms (a, 4000, a.size()) > 0.02, juce::String (id) + " on: the plugin still sounds and stays finite");
+        }
+    }
+
     // ---- the randomiser ----
     {
         bool inRange = true, down = false, up = false, wholeSemi = true; juce::Random r (5);
@@ -504,7 +575,7 @@ int main (int argc, char** argv)
                 else if (dynamic_cast<juce::Button*> (c) != nullptr) ++buttons;
             check (rotary == 38 && linear == 8, "window has 38 knobs and 8 faders (" + juce::String (rotary) + " / " + juce::String (linear) + ")");
             // 11 segmented groups: osc kind 2, mode 4, position 4, pre/post 2, random what 4, amount 3 = 19 buttons, + record, clear, randomise, undo
-            check (buttons == 19 + 4, "window has the choice buttons, Record, Clear, Randomise and Undo/Redo (" + juce::String (buttons) + " buttons)");
+            check (buttons == 19 + 4 + 7, "window has the choice buttons, Record, Clear, Randomise, Undo/Redo and the seven new on/off buttons (" + juce::String (buttons) + " buttons)");
             auto img = ed->createComponentSnapshot (ed->getLocalBounds());
             check (img.isValid() && img.getWidth() == ed->getWidth(), "window can be drawn");
             for (int w : { 700, 1400, 2100 })
@@ -530,7 +601,13 @@ int main (int argc, char** argv)
                 writePng (shot->createComponentSnapshot (shot->getLocalBounds()), dir.getChildFile ("window.png"));
                 shot->setSize (700, 500);
                 writePng (shot->createComponentSnapshot (shot->getLocalBounds()), dir.getChildFile ("window_small.png"));
-                check (dir.getChildFile ("window.png").getSize() > 0, "pictures of the window written");
+                // the same window with Echo Sync and all six snap switches on (to see what an "on" button looks like)
+                for (const char* id : { "echo_sync", "snap_looper_speed", "snap_resonator_tune", "snap_filter_cutoff", "snap_looper_start", "snap_looper_length" }) setParam (proc, id, 1.f);
+                shot.reset();
+                shot.reset (proc.createEditor());
+                shot->setSize (1400, 1000);
+                writePng (shot->createComponentSnapshot (shot->getLocalBounds()), dir.getChildFile ("window_all_switches_on.png"));
+                check (dir.getChildFile ("window.png").getSize() > 0 && dir.getChildFile ("window_all_switches_on.png").getSize() > 0, "pictures of the window written");
             }
         }
     }

@@ -27,6 +27,8 @@ private:
     Fader& addFader (const char* paramId, const juce::String& name, float x, float y, float h, juce::Colour c);
     Segments& addSegments (const char* paramId, const juce::String& caption, const juce::StringArray& buttonNames, juce::Colour c, float x, float y, float w, float h, bool vertical = false);
     void panel (const juce::String& title, float x, float y, float w, float h, juce::Colour c);
+    // A small on/off button in a panel's title row (Echo Sync and the snap switches), attached to a bool parameter.
+    juce::TextButton& addSwitch (const char* paramId, const juce::String& text, float x, float y, float w, juce::Colour c);
 
     AetherProcessor& proc_;
     std::unique_ptr<Look> look_;
@@ -35,6 +37,8 @@ private:
     struct Panel { juce::String title; float x, y, w, h; juce::Colour colour; };
     std::vector<Panel> panels_;
     juce::OwnedArray<juce::Component> owned_;
+    // declared after owned_ so the attachments are destroyed before the buttons they point to
+    juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> switchAtts_;
     juce::Label title_, notice_, noteInfo_, audioInfo_, tempoInfo_;
     juce::TextButton randomiseButton_ { "Randomise" }, undoButton_ { "Undo / Redo" }, clearButton_ { "Clear" };
     juce::ToggleButton recordButton_ { "Record" };

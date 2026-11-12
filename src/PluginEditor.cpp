@@ -220,6 +220,21 @@ AetherEditor::Segments& AetherEditor::addSegments (const char* id, const juce::S
     return *sg;
 }
 
+juce::TextButton& AetherEditor::addSwitch (const char* id, const juce::String& text, float x, float y, float w, juce::Colour c)
+{
+    auto* b = new juce::TextButton (text);
+    b->setClickingTogglesState (true);
+    b->setColour (juce::TextButton::buttonColourId, kTrack);
+    b->setColour (juce::TextButton::buttonOnColourId, c);
+    b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffc3c8d0));
+    b->setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+    b->setHelpText (text);
+    owned_.add (b); addAndMakeVisible (b);
+    place (*b, x, y, w, 28.f);
+    switchAtts_.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (proc_.apvts, id, *b));
+    return *b;
+}
+
 void AetherEditor::place (juce::Component& c, float x, float y, float w, float h) { placed_.push_back ({ &c, x, y, w, h }); }
 void AetherEditor::panel (const juce::String& t, float x, float y, float w, float h, juce::Colour c) { panels_.push_back ({ t, x, y, w, h, c }); }
 
@@ -249,6 +264,9 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     // Looper (three columns centred at x 110, 270, 430; the small MOD knobs are 74 wide)
     panel ("LOOPER", 20, 80, 500, 306, kLooper);
+    addSwitch ("snap_looper_speed", "Speed snap", 132, 84, 112, kLooper);
+    addSwitch ("snap_looper_start", "Start snap", 250, 84, 106, kLooper);
+    addSwitch ("snap_looper_length", "Length snap", 362, 84, 120, kLooper);
     addKnob ("looper_speed", "Speed", 52, 114, 116, true);
     addKnob ("looper_speed_mod", "MOD", 73, 266, 74);
     addKnob ("looper_start", "Start", 218, 118, 104, true);
@@ -260,6 +278,7 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     // Oscillator
     panel ("OSCILLATOR", 20, 396, 500, 306, kOsc);
+    addSwitch ("snap_osc_pitch", "Pitch snap", 170, 400, 112, kOsc);
     addKnob ("osc_pitch", "Pitch", 52, 430, 116, true);
     addKnob ("osc_pitch_mod", "MOD", 32, 582, 74);
     addKnob ("osc_octave", "Octave", 114, 582, 74);
@@ -276,6 +295,7 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     // Filter, Resonator, Echo, Ambience (columns centred 62, 181, 300 inside each 365-wide panel)
     panel ("FILTER", 665, 80, 355, 306, kFilter);
+    addSwitch ("snap_filter_cutoff", "Cutoff snap", 775, 84, 124, kFilter);
     addKnob ("filter_cutoff", "Cutoff", 679, 108, 88, true);
     addKnob ("filter_cutoff_mod", "MOD", 686, 226, 74);
     addKnob ("filter_resonance", "Resonance", 798, 108, 88, true);
@@ -285,6 +305,7 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
     addSegments ("filter_position", "Position", { "I", "II", "III", "IV" }, kFilter, 876, 328, 134, 54);
 
     panel ("RESONATOR", 1030, 80, 355, 306, kReso);
+    addSwitch ("snap_resonator_tune", "Tune snap", 1180, 84, 112, kReso);
     addKnob ("resonator_tune", "Tune", 1044, 108, 88, true);
     addKnob ("resonator_tune_mod", "MOD", 1051, 226, 74);
     addKnob ("resonator_feedback", "Feedback", 1163, 108, 88, true);
@@ -292,6 +313,7 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
     addKnob ("resonator_dissonance", "Dissonance", 1288, 114, 76, true);
 
     panel ("ECHO", 665, 396, 355, 306, kEcho);
+    addSwitch ("echo_sync", "Echo Sync", 775, 400, 124, kEcho);
     addKnob ("echo_density", "Density", 679, 428, 88, true);
     addKnob ("echo_density_mod", "MOD", 686, 548, 74);
     addKnob ("echo_repeats", "Repeats", 798, 428, 88, true);

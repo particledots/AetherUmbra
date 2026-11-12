@@ -27,6 +27,48 @@ struct Smooth
         return v;
     }
 };
+
+// ---- snap helpers: each moves a knob value (0..1) onto the grid of its control -----------------------------------------
+// The Pitch knob: 12 * (value - 0.5) semitones, so whole semitones are 13 positions from -6 to +6.
+float snapPitchKnob (float v)
+{
+    return std::min (1.f, std::max (0.f, 0.5f + std::round ((v - 0.5f) * 12.f) / 12.f));
+}
+
+// The Looper Speed knob: the firmware's CenterMap (Commons.h) turns it into -2 .. +2 (0 at speedZero, 1x at 0.75 for 0.51). Ratios
+// 2^(n/12), up and reversed. The zones the firmware locks at 0x (under 0.1) and 1x / -1x (0.95 to 1.05) are left alone.
+float snapSpeedKnob (float knob, float zero)
+{
+    constexpr float kTop = 0.99f;
+    const float v = knob < zero ? -2.f + 2.f * knob / zero : 2.f * (knob - zero) / (kTop - zero);
+    const float a = std::fabs (v);
+    if (a <= 0.1f || (a >= 0.95f && a <= 1.05f)) return knob;
+    const int n = std::min (12, (int) std::lround (12.f * std::log2 (a)));
+    const float s = std::copysign (std::exp2 ((float) n / 12.f), v);
+    return s < 0.f ? (s + 2.f) * zero / 2.f : zero + s * (kTop - zero) / 2.f;
+}
+
+// The Resonator Tune knob: the main pole moves from -24 semitones to +range (range = 24 at Dissonance 0, 16 at full, an integer as
+// in the firmware's Resonator.h). Whole semitones. (The other two poles keep the offsets of their own.)
+float snapResonatorTuneKnob (float tune, float dissonance)
+{
+    const int range = (int) (24.f - 8.f * std::min (1.f, std::max (0.f, dissonance)));
+    const float span = (float) (range + 24);
+    const int n = std::min (range, std::max (-24, (int) std::lround (-24.f + tune * span)));
+    return (float) (n + 24) / span;
+}
+
+// The Filter Cutoff knob: 10 Hz * 2200^value (10 Hz to 22 kHz, Filter.h). Notes of the equal-tempered scale, A = 440 Hz. The two
+// ends (fully closed and fully open) stay where they are.
+float snapCutoffKnob (float v)
+{
+    if (v <= 0.005f || v >= 0.995f) return v;
+    constexpr float kLn2200 = 7.696213f;       // ln (22000 / 10)
+    const float hz = 10.f * std::exp (v * kLn2200);
+    const int n = (int) std::lround (12.f * std::log2 (hz / 440.f));
+    const float snapped = 440.f * std::exp2 ((float) n / 12.f);
+    return std::min (1.f, std::max (0.f, std::log (snapped / 10.f) / kLn2200));
+}
 }
 
 struct Engine::Impl
@@ -130,9 +172,14 @@ struct Engine::Impl
         // Looper
         ctrls.looperSos = p.looperSos;
         ctrls.looperFilter = p.looperFilter;
-        ctrls.looperSpeed = looperSpeed.step (p.looperSpeed, 0.005f, f);
+        {
+            const float sp = looperSpeed.step (p.looperSpeed, 0.005f, f);
+            ctrls.looperSpeed = p.snapLooperSpeed ? snapSpeedKnob (sp, state.speedZero) : sp;      // Looper Speed snap
+        }
         ctrls.looperSpeedModAmount = p.looperSpeedMod;
         ctrls.looperStart = looperStart.step (p.looperStart, 0.005f, f);
+        ctrls.looperStartSnap = p.snapLooperStart ? 1.f : 0.f;       // Start and Length snap happen inside the looper (Looper.h)
+        ctrls.looperLengthSnap = p.snapLooperLength ? 1.f : 0.f;
         ctrls.looperStartModAmount = p.looperStartMod;
         ctrls.looperLength = looperLength.step (p.looperLength, 0.005f, f);
         ctrls.looperLengthModAmount = p.looperLengthMod;
@@ -151,7 +198,8 @@ struct Engine::Impl
             const float interval = p.noteOffset - noteCv;
             if (f || interval < -0.4f || interval > 0.4f) noteCv = p.noteOffset;
             else noteCv += 0.1f * interval;
-            const float tune = pitchKnob.step (p.oscPitch, 0.995f, f);
+            float tune = pitchKnob.step (p.oscPitch, 0.995f, f);
+            if (p.snapOscPitch) tune = snapPitchKnob (tune);          // Oscillator Pitch snap: whole semitones
             float note = Modulate (tune - 0.5f, ctrls.oscPitchModAmount, state.modValue, 0, 0, -1.f, 1.f, state.modAttenuverters);
             note = 12.f * note + 12.f * ctrls.oscOctave;
             if (f) notePot = note; else notePot += 0.1f * (note - notePot);
@@ -166,13 +214,19 @@ struct Engine::Impl
         ctrls.filterMode = p.filterMode;
         ctrls.filterPosition = p.filterPosition;
         ctrls.filterNoiseLevel = p.filterNoise;          // used by the AetherUmbra change in Filter.h
-        ctrls.filterCutoff = cutoff.step (p.filterCutoff, 0.01f, f);
+        {
+            const float c = cutoff.step (p.filterCutoff, 0.01f, f);
+            ctrls.filterCutoff = p.snapFilterCutoff ? snapCutoffKnob (c) : c;        // Filter Cutoff snap: musical notes
+        }
         ctrls.filterCutoffModAmount = p.filterCutoffMod;
         ctrls.filterResonance = resonance.step (p.filterResonance, 0.01f, f);
         ctrls.filterResonanceModAmount = p.filterResonanceMod;
 
         // Resonator
-        ctrls.resonatorTune = resTune.step (p.resonatorTune, 0.005f, f);
+        {
+            const float t = resTune.step (p.resonatorTune, 0.005f, f);
+            ctrls.resonatorTune = p.snapResonatorTune ? snapResonatorTuneKnob (t, p.resonatorDissonance) : t;   // Resonator Tune snap
+        }
         ctrls.resonatorTuneModAmount = p.resonatorTuneMod;
         ctrls.resonatorFeedback = resFeedback.step (p.resonatorFeedback, 0.01f, f);
         ctrls.resonatorFeedbackModAmount = p.resonatorFeedbackMod;
@@ -184,6 +238,7 @@ struct Engine::Impl
         ctrls.echoRepeats = echoRepeats.step (p.echoRepeats, 0.01f, f);
         ctrls.echoRepeatsModAmount = p.echoRepeatsMod;
         ctrls.echoFilter = p.echoFilter;
+        ctrls.echoSync = p.echoSync ? 1.f : 0.f;      // off = free echo even when Logic gives a tempo (Echo.h)
 
         // Ambience
         ctrls.ambienceSpacetime = ambSpacetime.step (p.ambienceSpacetime, 0.005f, f);
@@ -218,10 +273,11 @@ struct Engine::Impl
             state.tempo->trigger (false);
             pulseHigh = false;
         }
-        if (transport.bpm <= 0.0) { beatPhase = 0.0; return; }   // nothing known: internal clock
+        if (transport.bpm <= 0.0) { beatPhase = 0.0; state.hostBeatSamples = 0.f; return; }   // nothing known: internal clock, snaps are free
 
         const double bpm = std::min (std::max (transport.bpm, kMinBpm), kMaxBpm);
         const double blocksPerBeat = 60.0 * state.blockRate / bpm;
+        state.hostBeatSamples = (float) (60.0 * state.sampleRate / bpm);     // for the Looper Start / Length snap (exact, not in blocks)
 
         bool snapped = false;
         if (transportPending)

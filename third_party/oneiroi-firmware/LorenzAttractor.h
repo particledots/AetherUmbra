@@ -131,7 +131,10 @@ public:
     void setFrequency(float freq)
     {
         freq *= 0.5f;
-        t_ = 1.f / (sampleRate_ / Clamp(freq, 0.001, 10.f));
+        // AetherUmbra change: the step is limited to 0.005 (it was 0.00667 at the top of the range). With the module's
+        // own step size at the fastest setting the simple integration below runs away (x becomes infinite and stays
+        // infinite), which silenced the plugin when a host tempo made the Mod speed reach its fastest ratios.
+        t_ = Min(1.f / (sampleRate_ / Clamp(freq, 0.001, 10.f)), 0.005f);
     }
 
     void process()
@@ -140,6 +143,14 @@ public:
         float yt = y_ + t_ * (x_ * (b_ - z_) - y_);
         float zt = z_ + t_ * (x_ * y_ - c_ * z_);
 
+        // AetherUmbra change: if the state ever becomes invalid or huge, start again instead of staying broken.
+        if (!(fabsf(xt) < 1000.f && fabsf(yt) < 1000.f && fabsf(zt) < 1000.f))
+        {
+            x_ = y_ = z_ = 1.f;
+            max_ = 1.f;
+            min_ = 0.f;
+            return;
+        }
         x_ = xt;
         y_ = yt;
         z_ = zt;

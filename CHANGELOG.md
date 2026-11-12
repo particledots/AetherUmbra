@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.0: fix round on 1.0.0 (Echo Sync and snap switches)
+- Result: waiting for the Logic test on the M4 Mac mini (Logic 11.2, 44.1 kHz). Automatic tests pass (see below).
+- New parameters 56 to 62, at the end of the list (parameter order is unchanged; 1.0.0 had 55): Echo Sync (default off), then the snap switches
+  Oscillator Pitch (default on), Looper Speed, Resonator Tune, Filter Cutoff, Looper Start, Looper Length (all off). The window has a small
+  on/off button for each in the title bar of its panel (Looper: Speed, Start, Length; Oscillator: Pitch; Filter: Cutoff; Resonator: Tune; Echo: Echo Sync).
+- Echo Sync: off = free echo (smooth Density, 10 ms to about 4 s) even when Logic gives a tempo; on = the nine tempo steps of 1.0.0 (1/64 to one beat).
+  Modulation and Ambience auto-pan follow Logic's tempo either way. Longer sync steps are not added (not requested).
+- Snap switches: Pitch = whole semitones; Looper Speed = ratios 2^(n/12) up and reversed, locked zones at 0x, 1x, -1x stay; Resonator Tune = whole semitones
+  of the main pole; Filter Cutoff = notes (A = 440 Hz), fully open or closed unchanged; Looper Start / Length = 1/16-note divisions (a quarter beat) of Logic's tempo
+  as exact sample positions, free when no tempo. Pitch, Speed, Tune and Cutoff snap the knob value (Mod is added after); Start and Length snap the knob plus Mod
+  (otherwise a moving Mod would restart the loop fade in every block).
+- Firmware changes (marked, listed in AETHERUMBRA-CHANGES.md): Commons.h (three new PatchCtrls fields, one PatchState field), Echo.h (Echo Sync), Looper.h (beat-division
+  Start and Length). The other four snaps are in src/engine/AetherEngine.cpp.
+- Bug found by the random-settings test and fixed (existed in 1.0.0): with Mod type Chaos, Mod speed at its fastest ratios and a Logic tempo of about 120 BPM or more,
+  the chaos generator (LorenzAttractor.h) ran away to infinity and the plugin stayed silent until it was reloaded. Its step is now limited (chaos at those top
+  speeds is about a quarter slower) and it restarts by itself if it ever goes invalid. New engine test section 5b.
+- Tail: still 12 s. With Echo Sync off the echo ringing is longer than with the stepped echo (defaults 6.8 s, covered; Repeats 0.5 + Density full 24 s and
+  Repeats 0.9 + Density 0.5 34 s, not covered). Rows added to the engine tail test.
+- Engine defaults are the firmware's own (Echo Sync on, no snapping); the plugin's defaults are set in src/Parameters.h. Saved 1.0.0 projects open with Echo Sync off and Oscillator Pitch snap on.
+- Tests added: engine test section 7 (Echo Sync: tempo follows only when on, smooth Density when off, about 3.9 s at full, modulation still follows tempo, switching while playing;
+  Pitch, Speed, Tune, Cutoff snaps; Looper Length interval 0.250 s at 120 BPM and 0.300 s at 100 BPM; Looper Start; free without tempo; fuzz now switches all seven at random with and without tempo);
+  plugin test (62 parameters in order, names, defaults, Echo Sync and Pitch snap through the plugin, window has the seven new buttons, pictures with the switches).
+- Version 1.1.0.
+
 ## 1.0.0: Milestone 2 (the finished plugin)
 - Result: PASSED on Nov 12, 2026: all checklist items on the M4 Mac mini (Logic 11.2, 44.1 kHz) and on the Intel Mac (macOS 12.7.8,
   Logic 10.7.8); automatic tests pass (engine test incl. tempo and tail sections; plugin test 97 checks). Notes: Supersaw works; Wavetable

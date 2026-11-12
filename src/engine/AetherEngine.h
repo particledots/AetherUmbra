@@ -84,6 +84,17 @@ struct EngineParams
     float modLevel = 0.0f;
     float modSpeed = 0.5f;
     float modType = 0.0f;                // 0 Lorenz, 1/6 sine, 2/6 ramp, 3/6 inverted ramp, 4/6 square, 5/6 sample and hold, 1 envelope follower
+
+    // Echo Sync and the snap switches (new in 1.1.0). The values here are what the engine does when nothing is set: the firmware's
+    // own behaviour (echo clocked by the tempo, no snapping). The plugin's own defaults (Echo Sync off, only Oscillator Pitch
+    // snapping) are set in src/Parameters.h.
+    bool echoSync = true;                // true = Echo Density follows Logic's tempo in steps (needs a tempo); false = free echo, smooth Density
+    bool snapOscPitch = false;           // Pitch knob in whole semitones
+    bool snapLooperSpeed = false;        // Speed knob in ratios 2^(n/12) (the firmware's locked zones at 0x, 1x and -1x stay)
+    bool snapResonatorTune = false;      // Tune knob in whole semitones
+    bool snapFilterCutoff = false;       // Cutoff knob on musical notes (equal temperament, A = 440 Hz)
+    bool snapLooperStart = false;        // Start on 1/16-note divisions of the host tempo (free when there is no tempo)
+    bool snapLooperLength = false;       // Length on 1/16-note divisions of the host tempo (free when there is no tempo)
 };
 
 // What the host (Logic) says about tempo and transport. bpm <= 0 means "no tempo known": the engine then runs on the

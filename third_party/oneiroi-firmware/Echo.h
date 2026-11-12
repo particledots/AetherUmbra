@@ -96,7 +96,11 @@ private:
 
     void SetDensity(float value)
     {
-        if (ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource)
+        // AetherUmbra change: Echo Sync. With the switch off the echo is free (smooth Density) although a host tempo is
+        // present, like the module with nothing on its sync input. Only the echo is affected: modulation and auto-pan
+        // keep following the clock.
+        const bool syncedEcho = ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource && patchCtrls_->echoSync > 0.5f;
+        if (syncedEcho)
         {
             int newIndex = densityQuantizer_.Process(value);
             // AetherUmbra change: also set the tap times again when the clock period changed (a host tempo change). The
@@ -135,7 +139,12 @@ private:
 
             echoDensity_ = value;
 
-            float d = MapExpo(echoDensity_, 0.f, 1.f, kEchoMinLengthSamples, patchState_->clockSamples * kEchoInternalClockMultiplier);
+            // AetherUmbra change: with a host tempo and Echo Sync off the range is that of the module's own clock (one
+            // pass of the 262144-sample looper buffer = 8192 blocks), about 4 s, not the host's beat length.
+            const float clockBlocks = ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource
+                                          ? (float) (kLooperChannelBufferLength / patchState_->blockSize)
+                                          : (float) patchState_->clockSamples;
+            float d = MapExpo(echoDensity_, 0.f, 1.f, kEchoMinLengthSamples, clockBlocks * kEchoInternalClockMultiplier);
             size_t s = kEchoFadeSamples;
             ParameterInterpolator densityParam(&oldDensity_, d, s);
 

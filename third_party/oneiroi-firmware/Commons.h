@@ -256,6 +256,12 @@ struct PatchCtrls
 
     float randomMode;
     float randomAmount;
+
+    // AetherUmbra change (Echo Sync and the Looper Start / Length snap switches): new plugin controls that the module does
+    // not have. 0 = off, 1 = on. Zero from the start (the engine clears the structure), which keeps the module's behaviour.
+    float echoSync;            // 1 = the Echo Density follows the clock in steps; 0 = free echo (smooth Density)
+    float looperStartSnap;     // 1 = Looper Start lands on beat divisions (needs hostBeatSamples)
+    float looperLengthSnap;    // 1 = Looper Length lands on beat divisions (needs hostBeatSamples)
 };
 
 struct PatchCvs
@@ -348,6 +354,10 @@ struct PatchState
     FuncMode funcMode;
 
     StartupPhase startupPhase;
+
+    // AetherUmbra change: the length of one beat of the host tempo in samples (48 kHz engine samples, not rounded
+    // to blocks); 0 = the host gives no tempo. Used by the Looper Start / Length snap switches.
+    float hostBeatSamples;
 };
 
 inline bool AreEquals(float val1, float val2, float d = kEps)

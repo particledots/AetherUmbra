@@ -125,14 +125,16 @@ private:
         speed_ = value;
     }
 
-    void SetStart(float value)
+    // AetherUmbra change: exactStart is -1 normally. With the Looper Start snap switch on (and a host tempo) it is the start
+    // position in samples, already on a beat division, which is used as it is instead of the 128 steps of the lookup table.
+    void SetStart(float value, int32_t exactStart = -1)
     {
         if (value > 0.98f)
         {
             value = 1.f;
         }
 
-        uint32_t v = startLUT_.Quantized(value);
+        uint32_t v = exactStart >= 0 ? (uint32_t) exactStart : startLUT_.Quantized(value);
 
         if (PlaybackDirection::PLAYBACK_STALLED == direction_)
         {
@@ -161,14 +163,16 @@ private:
 
     bool lengthFade_ = false;
 
-    void SetLength(float value)
+    // AetherUmbra change: exactLength is -1 normally; with the Looper Length snap switch on (and a host tempo) it is the length
+    // in samples, already on a beat division, used as it is instead of the 128 steps of the lookup table.
+    void SetLength(float value, int32_t exactLength = -1)
     {
         if (value > 0.98f)
         {
             value = 1.f;
         }
 
-        uint32_t v = lengthLUT_.Quantized(value);
+        uint32_t v = exactLength >= 0 ? (uint32_t) exactLength : lengthLUT_.Quantized(value);
 
         if (PlaybackDirection::PLAYBACK_STALLED == direction_)
         {
@@ -467,11 +471,38 @@ public:
 
         ParameterInterpolator startParam(&oldStartValue_, patchCtrls_->looperStart, kLooperInterpolationBlocks);
         float t = Modulate(startParam.Next(), patchCtrls_->looperStartModAmount, patchState_->modValue, patchCtrls_->looperStartCvAmount, patchCvs_->looperStart, -1.f, 1.f, patchState_->modAttenuverters, patchState_->cvAttenuverters);
-        SetStart(t);
+        // AetherUmbra change: Looper Start snap. The finished value (knob plus modulation) is moved to the nearest 1/16 note
+        // of the host tempo (a quarter of a beat); without a host tempo, or with the switch off, nothing changes.
+        const float gridSamples = patchState_->hostBeatSamples * 0.25f;
+        const bool snapStart = patchCtrls_->looperStartSnap > 0.5f && gridSamples >= 1.f;
+        if (snapStart)
+        {
+            float s = Clamp(t, 0.f, 1.f) * (float)(kLooperChannelBufferLength - 1);
+            s = floorf(s / gridSamples + 0.5f) * gridSamples;
+            SetStart(t, (int32_t) Clamp(floorf(s + 0.5f), 0.f, (float)(kLooperChannelBufferLength - 1)));
+        }
+        else
+        {
+            SetStart(t);
+        }
 
         ParameterInterpolator lengthParam(&oldLengthValue_, patchCtrls_->looperLength, kLooperInterpolationBlocks);
         float l = Modulate(lengthParam.Next(), patchCtrls_->looperLengthModAmount, patchState_->modValue, patchCtrls_->looperLengthCvAmount, patchCvs_->looperLength, -1.f, 1.f, patchState_->modAttenuverters, patchState_->cvAttenuverters);
-        SetLength(l);
+        // AetherUmbra change: Looper Length snap. The length that the knob (plus modulation) asks for, in samples (the same
+        // curve as the lookup table: minimum + (maximum - minimum) * value^3), moves to the nearest 1/16 note of the host
+        // tempo, but never below one grid step and never outside the buffer; the result is used exactly.
+        const bool snapLength = patchCtrls_->looperLengthSnap > 0.5f && gridSamples >= 1.f;
+        if (snapLength)
+        {
+            const float lc = Clamp(l, 0.f, 1.f);
+            float s = (float) kLooperLoopLengthMin + (float)(kLooperChannelBufferLength - kLooperLoopLengthMin) * lc * lc * lc;
+            s = Max(1.f, floorf(s / gridSamples + 0.5f)) * gridSamples;
+            SetLength(l, (int32_t) Clamp(floorf(s + 0.5f), (float) kLooperLoopLengthMin, (float) kLooperChannelBufferLength));
+        }
+        else
+        {
+            SetLength(l);
+        }
 
         SetFilter(patchCtrls_->looperFilter);
 
