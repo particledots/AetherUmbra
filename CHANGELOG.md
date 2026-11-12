@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1: Milestone 1 fix round (window)
+- Window: labels about twice as large, MOD knobs larger (56 to 74 grid units), panel titles and button text larger, default
+  size 1260 x 900. Layout otherwise as approved. Audio In box: added "Muting the source track does not stop the side chain."
+  (Logic's side chain is taken before the source track's fader and mute; measured in the Milestone 1 test.)
+- Ambience (reverb) sound: investigated, see the Project document AetherUmbra-ambience-investigation.md. No code change yet
+  (the DelayLine.h change, the 44.1 kHz path and ARM64 versus Intel were all ruled out; cause still open).
+
 ## 0.2.0: Milestone 1 (the engine runs; result to be filled in after the Logic test)
 - The Oneiroi engine is compiled into the plugin: an AU Instrument (`aumu`) named `AetherUmbra` and a VST3. The two Milestone 0
   shells are gone. The engine runs at 48 kHz in blocks of 32 samples; a band-limited resampler and a block FIFO make it work at

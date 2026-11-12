@@ -8,7 +8,7 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 0.2.0, Milestone 1: the Oneiroi engine runs as an AU **Instrument** (plus a VST3 from the same code) with a rough
+Version 0.2.1, Milestone 1 (fix round): the Oneiroi engine runs as an AU **Instrument** (plus a VST3 from the same code) with a rough
 but complete window (every control of the approved "module layout"). It makes sound by itself (sine, supersaw or
 wavetable oscillator, looper), takes its pitch from MIDI notes (the last note played, held like a V/Oct voltage), and
 processes the audio of another Logic track chosen in the plugin's **Side Chain** menu. Looper, filter, resonator, echo,

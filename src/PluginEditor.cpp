@@ -60,7 +60,7 @@ struct AetherEditor::Look : juce::LookAndFeel_V4
         g.setFont (fontOf (r.getHeight() * 0.3f, true));
         g.drawText (on ? "RECORDING" : b.getButtonText(), r.toNearestInt(), juce::Justification::centred);
     }
-    juce::Font getTextButtonFont (juce::TextButton& b, int h) override { return fontOf (juce::jmin ((float) h * 0.5f, (float) b.getWidth() * 0.3f), true); }
+    juce::Font getTextButtonFont (juce::TextButton& b, int h) override { return fontOf (juce::jmin ((float) h * 0.5f, (float) b.getWidth() * (b.getButtonText().length() > 3 ? 0.34f : 0.46f)), true); }
 };
 
 // ---- controls -------------------------------------------------------------------------------------------------------
@@ -77,8 +77,11 @@ struct AetherEditor::Knob : juce::Component
         addAndMakeVisible (slider);
         label.setText (name, juce::dontSendNotification);
         label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, big ? kInk : kDim);
+        label.setColour (juce::Label::textColourId, big ? kInk : juce::Colour (0xffc3c8d0));
         label.setInterceptsMouseClicks (false, false);
+        label.setMinimumHorizontalScale (0.6f);
+        label.setPaintingIsUnclipped (true);
+        setPaintingIsUnclipped (true);
         addAndMakeVisible (label);
         att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id, slider);
         // double click = back to the default value of the parameter
@@ -88,9 +91,9 @@ struct AetherEditor::Knob : juce::Component
     void resized() override
     {
         auto r = getLocalBounds();
-        const int lh = juce::jmax (10, (int) (getWidth() * 0.2f));
-        label.setFont (fontOf ((float) lh * 0.8f));
-        label.setBounds (r.removeFromBottom (lh));
+        const int lh = juce::jmax (10, getHeight() - getWidth());     // the knob is square, the label gets what is below it
+        label.setFont (fontOf ((float) lh * 0.78f, true));
+        label.setBounds (r.removeFromBottom (lh).expanded (getWidth() < 80 ? (int) (getWidth() * 0.3f) : getWidth() / 8, 0));
         slider.setBounds (r);
     }
     juce::Slider slider; juce::Label label;
@@ -109,6 +112,9 @@ struct AetherEditor::Fader : juce::Component
         label.setText (name, juce::dontSendNotification);
         label.setJustificationType (juce::Justification::centred);
         label.setColour (juce::Label::textColourId, kInk);
+        label.setMinimumHorizontalScale (0.6f);
+        label.setPaintingIsUnclipped (true);
+        setPaintingIsUnclipped (true);
         addAndMakeVisible (label);
         att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id, slider);
         if (auto* prm = p.apvts.getParameter (id)) slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
@@ -116,9 +122,9 @@ struct AetherEditor::Fader : juce::Component
     void resized() override
     {
         auto r = getLocalBounds();
-        const int lh = juce::jmax (10, (int) (getWidth() * 0.26f));
-        label.setFont (fontOf ((float) lh * 0.78f, true));
-        label.setBounds (r.removeFromBottom (lh));
+        const int lh = juce::jmax (10, (int) (getWidth() * 0.34f));
+        label.setFont (fontOf ((float) lh * 0.7f, true));
+        label.setBounds (r.removeFromBottom (lh).expanded (juce::jmax (6, getWidth() / 6), 0));
         slider.setBounds (r);
     }
     juce::Slider slider; juce::Label label;
@@ -153,10 +159,10 @@ struct AetherEditor::Segments : juce::Component
     void paint (juce::Graphics& g) override
     {
         if (caption.isEmpty()) return;
-        g.setColour (kDim); g.setFont (fontOf (captionH() * 0.82f));
-        g.drawText (caption, getLocalBounds().removeFromTop ((int) captionH()), juce::Justification::centredLeft);
+        g.setColour (juce::Colour (0xffc3c8d0)); g.setFont (fontOf (captionH() * 0.84f));
+        g.drawFittedText (caption, getLocalBounds().removeFromTop ((int) captionH()), juce::Justification::centredLeft, 1, 0.7f);
     }
-    float captionH() const { return caption.isEmpty() ? 0.f : juce::jmax (10.f, (float) getHeight() * (vertical ? 0.14f : 0.36f)); }
+    float captionH() const { return caption.isEmpty() ? 0.f : juce::jmax (10.f, (float) getHeight() * (vertical ? 0.16f : 0.34f)); }
     void resized() override
     {
         auto r = getLocalBounds(); r.removeFromTop ((int) captionH());
@@ -179,14 +185,14 @@ AetherEditor::Knob& AetherEditor::addKnob (const char* id, const juce::String& n
     else if (s.startsWith ("ambience")) c = kAmb; else if (s.startsWith ("output")) c = kMix;
     auto* k = new Knob (proc_, id, name, c, big);
     owned_.add (k); addAndMakeVisible (k);
-    place (*k, x, y, size, size + size * (big ? 0.2f : 0.34f));
+    place (*k, x, y, size, size + (big ? 28.f : 25.f));
     return *k;
 }
 AetherEditor::Fader& AetherEditor::addFader (const char* id, const juce::String& name, float x, float y, float h)
 {
     auto* f = new Fader (proc_, id, name, kMix);
     owned_.add (f); addAndMakeVisible (f);
-    place (*f, x, y, 66.f, h);
+    place (*f, x, y, 70.f, h);
     return *f;
 }
 AetherEditor::Segments& AetherEditor::addSegments (const char* id, const juce::String& caption, const juce::StringArray& names, juce::Colour c, float x, float y, float w, float h, bool vertical)
@@ -219,98 +225,98 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
     audioInfo_.setColour (juce::Label::textColourId, kDim);
     audioInfo_.setJustificationType (juce::Justification::topLeft);
     for (auto* l : { &title_, &notice_, &noteInfo_, &audioInfo_ }) { addAndMakeVisible (*l); l->setMinimumHorizontalScale (1.0f); }
-    place (title_, 20, 6, 330, 40); place (notice_, 20, 46, 1100, 22); place (noteInfo_, 820, 10, 440, 30);
-    addKnob ("output_level", "Out", 1292, 4, 56);
+    place (title_, 20, 6, 330, 40); place (notice_, 20, 48, 1270, 24); place (noteInfo_, 760, 10, 530, 32);
+    addKnob ("output_level", "Out", 1318, 0, 56);
 
-    // Looper
-    panel ("LOOPER", 20, 80, 450, 280, kLooper);
-    addKnob ("looper_speed", "Speed", 40, 110, 130, true);
-    addKnob ("looper_speed_mod", "MOD", 77, 270, 56);
-    addKnob ("looper_start", "Start", 200, 112, 100, true);
-    addKnob ("looper_start_mod", "MOD", 192, 246, 56);
-    addKnob ("looper_sos", "Sound on sound", 256, 246, 56);
-    addKnob ("looper_length", "Length", 340, 112, 100, true);
-    addKnob ("looper_length_mod", "MOD", 332, 246, 56);
-    addKnob ("looper_filter", "Filter", 396, 246, 56);
+    // Looper (three columns centred at x 110, 270, 430; the small MOD knobs are 74 wide)
+    panel ("LOOPER", 20, 80, 500, 306, kLooper);
+    addKnob ("looper_speed", "Speed", 52, 114, 116, true);
+    addKnob ("looper_speed_mod", "MOD", 73, 266, 74);
+    addKnob ("looper_start", "Start", 218, 118, 104, true);
+    addKnob ("looper_start_mod", "MOD", 184, 266, 74);
+    addKnob ("looper_sos", "Sound on sound", 272, 266, 74);
+    addKnob ("looper_length", "Length", 378, 118, 104, true);
+    addKnob ("looper_length_mod", "MOD", 358, 266, 74);
+    addKnob ("looper_filter", "Filter", 438, 266, 74);
 
     // Oscillator
-    panel ("OSCILLATOR", 20, 370, 450, 290, kOsc);
-    addKnob ("osc_pitch", "Pitch", 40, 398, 130, true);
-    addKnob ("osc_pitch_mod", "MOD", 50, 560, 56);
-    addKnob ("osc_octave", "Octave", 112, 560, 56);
-    addKnob ("osc_detune", "Detune", 200, 400, 100, true);
-    addKnob ("osc_detune_mod", "MOD", 192, 534, 56);
-    addKnob ("osc_unison", "Unison", 256, 534, 56);
-    addSegments ("osc_kind", "Second oscillator", { "Supersaw", "Wavetable" }, kOsc, 336, 420, 120, 96, true);
+    panel ("OSCILLATOR", 20, 396, 500, 306, kOsc);
+    addKnob ("osc_pitch", "Pitch", 52, 430, 116, true);
+    addKnob ("osc_pitch_mod", "MOD", 32, 582, 74);
+    addKnob ("osc_octave", "Octave", 114, 582, 74);
+    addKnob ("osc_detune", "Detune", 218, 434, 104, true);
+    addKnob ("osc_detune_mod", "MOD", 192, 582, 74);
+    addKnob ("osc_unison", "Unison", 274, 582, 74);
+    addSegments ("osc_kind", "Second oscillator", { "Supersaw", "Wavetable" }, kOsc, 362, 440, 144, 120, true);
 
     // Modulation
-    panel ("MODULATION", 485, 80, 135, 580, kMod);
-    addKnob ("mod_level", "Level", 500, 118, 105, true);
-    addKnob ("mod_speed", "Speed", 500, 300, 105, true);
-    addKnob ("mod_type", "Type", 500, 482, 105, true);
+    panel ("MODULATION", 530, 80, 125, 622, kMod);
+    addKnob ("mod_level", "Level", 545, 122, 95, true);
+    addKnob ("mod_speed", "Speed", 545, 322, 95, true);
+    addKnob ("mod_type", "Type", 545, 522, 95, true);
 
-    // Filter, Resonator, Echo, Ambience
-    panel ("FILTER", 635, 80, 365, 285, kFilter);
-    addKnob ("filter_cutoff", "Cutoff", 648, 110, 82, true);
-    addKnob ("filter_cutoff_mod", "MOD", 661, 236, 56);
-    addKnob ("filter_resonance", "Resonance", 750, 110, 82, true);
-    addKnob ("filter_resonance_mod", "MOD", 763, 236, 56);
-    addKnob ("filter_noise", "Noise", 856, 118, 62, true);
-    addSegments ("filter_mode", "Mode", { "LP", "BP", "HP", "CF" }, kFilter, 648, 318, 190, 40);
-    addSegments ("filter_position", "Position", { "I", "II", "III", "IV" }, kFilter, 852, 318, 138, 40);
+    // Filter, Resonator, Echo, Ambience (columns centred 62, 181, 300 inside each 365-wide panel)
+    panel ("FILTER", 665, 80, 355, 306, kFilter);
+    addKnob ("filter_cutoff", "Cutoff", 679, 108, 88, true);
+    addKnob ("filter_cutoff_mod", "MOD", 686, 226, 74);
+    addKnob ("filter_resonance", "Resonance", 798, 108, 88, true);
+    addKnob ("filter_resonance_mod", "MOD", 805, 226, 74);
+    addKnob ("filter_noise", "Noise", 923, 114, 76, true);
+    addSegments ("filter_mode", "Mode", { "LP", "BP", "HP", "CF" }, kFilter, 678, 328, 190, 54);
+    addSegments ("filter_position", "Position", { "I", "II", "III", "IV" }, kFilter, 876, 328, 134, 54);
 
-    panel ("RESONATOR", 1015, 80, 365, 285, kReso);
-    addKnob ("resonator_tune", "Tune", 1028, 110, 82, true);
-    addKnob ("resonator_tune_mod", "MOD", 1041, 236, 56);
-    addKnob ("resonator_feedback", "Feedback", 1130, 110, 82, true);
-    addKnob ("resonator_feedback_mod", "MOD", 1143, 236, 56);
-    addKnob ("resonator_dissonance", "Dissonance", 1240, 118, 70, true);
+    panel ("RESONATOR", 1030, 80, 355, 306, kReso);
+    addKnob ("resonator_tune", "Tune", 1044, 108, 88, true);
+    addKnob ("resonator_tune_mod", "MOD", 1051, 226, 74);
+    addKnob ("resonator_feedback", "Feedback", 1163, 108, 88, true);
+    addKnob ("resonator_feedback_mod", "MOD", 1170, 226, 74);
+    addKnob ("resonator_dissonance", "Dissonance", 1288, 114, 76, true);
 
-    panel ("ECHO", 635, 375, 365, 285, kEcho);
-    addKnob ("echo_density", "Density", 648, 405, 82, true);
-    addKnob ("echo_density_mod", "MOD", 661, 531, 56);
-    addKnob ("echo_repeats", "Repeats", 750, 405, 82, true);
-    addKnob ("echo_repeats_mod", "MOD", 763, 531, 56);
-    addKnob ("echo_filter", "Filter", 856, 413, 70, true);
+    panel ("ECHO", 665, 396, 355, 306, kEcho);
+    addKnob ("echo_density", "Density", 679, 428, 88, true);
+    addKnob ("echo_density_mod", "MOD", 686, 548, 74);
+    addKnob ("echo_repeats", "Repeats", 798, 428, 88, true);
+    addKnob ("echo_repeats_mod", "MOD", 805, 548, 74);
+    addKnob ("echo_filter", "Filter", 923, 434, 76, true);
 
-    panel ("AMBIENCE", 1015, 375, 365, 285, kAmb);
-    addKnob ("ambience_spacetime", "Spacetime", 1028, 405, 82, true);
-    addKnob ("ambience_spacetime_mod", "MOD", 1041, 531, 56);
-    addKnob ("ambience_decay", "Decay", 1130, 405, 82, true);
-    addKnob ("ambience_decay_mod", "MOD", 1143, 531, 56);
-    addKnob ("ambience_autopan", "Auto-pan", 1240, 413, 70, true);
+    panel ("AMBIENCE", 1030, 396, 355, 306, kAmb);
+    addKnob ("ambience_spacetime", "Spacetime", 1044, 428, 88, true);
+    addKnob ("ambience_spacetime_mod", "MOD", 1051, 548, 74);
+    addKnob ("ambience_decay", "Decay", 1163, 428, 88, true);
+    addKnob ("ambience_decay_mod", "MOD", 1170, 548, 74);
+    addKnob ("ambience_autopan", "Auto-pan", 1288, 434, 76, true);
 
     // Bottom row
-    panel ("LOOPER RECORD", 20, 675, 205, 320, kLooper);
-    addSegments ("looper_resampling", "Pre = input, Post = output", { "Pre", "Post" }, kLooper, 35, 712, 175, 54);
-    addAndMakeVisible (recordButton_); place (recordButton_, 35, 784, 175, 84);
+    panel ("LOOPER RECORD", 20, 712, 215, 283, kLooper);
+    addSegments ("looper_resampling", "Pre = input, Post = output", { "Pre", "Post" }, kLooper, 32, 744, 191, 58);
+    addAndMakeVisible (recordButton_); place (recordButton_, 32, 810, 191, 84);
     recordAtt_ = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "looper_recording", recordButton_);
-    addAndMakeVisible (clearButton_); place (clearButton_, 35, 884, 175, 56);
+    addAndMakeVisible (clearButton_); place (clearButton_, 32, 904, 191, 54);
     clearButton_.onClick = [this] { proc_.requestClearLooper(); };
 
-    panel ("LEVELS", 235, 675, 385, 320, kMix);
+    panel ("LEVELS", 245, 712, 350, 283, kMix);
     const char* f1[][2] = { { "looper_volume", "Looper" }, { "osc1_volume", "Sine" }, { "osc2_volume", "SS / WT" }, { "input_volume", "Input" } };
-    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], 252.f + 90.f * (float) i, 718, 262);
+    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], 258.f + 84.f * (float) i, 748, 236);
 
-    panel ("RANDOM", 630, 675, 215, 320, kRandom);
-    addSegments ("random_mode", "What", { "All", "Osc", "Loop", "FX" }, kRandom, 645, 712, 185, 50);
-    addSegments ("random_amount", "Amount", { "Low", "Mid", "High" }, kRandom, 645, 770, 185, 50);
-    addAndMakeVisible (randomiseButton_); place (randomiseButton_, 645, 832, 185, 66);
+    panel ("RANDOM", 605, 712, 210, 283, kRandom);
+    addSegments ("random_mode", "What", { "All", "Osc", "Loop", "FX" }, kRandom, 618, 744, 184, 56);
+    addSegments ("random_amount", "Amount", { "Low", "Mid", "High" }, kRandom, 618, 806, 184, 56);
+    addAndMakeVisible (randomiseButton_); place (randomiseButton_, 618, 870, 184, 56);
     randomiseButton_.setColour (juce::TextButton::buttonColourId, kRandom.darker (0.3f));
     randomiseButton_.onClick = [this] { proc_.randomise(); };
-    addAndMakeVisible (undoButton_); place (undoButton_, 645, 908, 185, 50);
+    addAndMakeVisible (undoButton_); place (undoButton_, 618, 934, 184, 48);
     undoButton_.onClick = [this] { proc_.undoRedo(); };
 
-    panel ("LEVELS", 855, 675, 385, 320, kMix);
+    panel ("LEVELS", 825, 712, 350, 283, kMix);
     const char* f2[][2] = { { "filter_level", "Filter" }, { "resonator_volume", "Resonator" }, { "echo_volume", "Echo" }, { "ambience_volume", "Ambience" } };
-    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], 872.f + 90.f * (float) i, 718, 262);
+    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], 838.f + 84.f * (float) i, 748, 236);
 
-    panel ("AUDIO IN", 1250, 675, 130, 320, kMix);
-    addAndMakeVisible (audioInfo_); place (audioInfo_, 1260, 712, 112, 270);
+    panel ("AUDIO IN", 1185, 712, 205, 283, kMix);
+    addAndMakeVisible (audioInfo_); place (audioInfo_, 1195, 744, 185, 244);
 
     timerCallback();
     startTimerHz (10);
-    setSize (1120, 800);
+    setSize (1260, 900);
 }
 
 AetherEditor::~AetherEditor() { stopTimer(); setLookAndFeel (nullptr); }
@@ -323,8 +329,8 @@ void AetherEditor::paint (juce::Graphics& g)
         const auto r = juce::Rectangle<float> (p.x, p.y, p.w, p.h) * scale_;
         g.setColour (kPanel); g.fillRoundedRectangle (r, 8.f * scale_);
         g.setColour (p.colour.withAlpha (0.55f)); g.drawRoundedRectangle (r.reduced (0.5f), 8.f * scale_, 1.f);
-        g.setColour (p.colour); g.setFont (fontOf (13.f * scale_, true));
-        g.drawText (p.title, (int) (r.getX() + 12.f * scale_), (int) (r.getY() + 6.f * scale_), (int) (r.getWidth() - 24.f * scale_), (int) (18.f * scale_), juce::Justification::centredLeft);
+        g.setColour (p.colour); g.setFont (fontOf (18.f * scale_, true));
+        g.drawFittedText (p.title, juce::Rectangle<int> ((int) (r.getX() + 9.f * scale_), (int) (r.getY() + 6.f * scale_), (int) (r.getWidth() - 14.f * scale_), (int) (24.f * scale_)), juce::Justification::centredLeft, 1, 0.8f);
     }
 }
 
@@ -333,10 +339,10 @@ void AetherEditor::resized()
     scale_ = (float) getWidth() / 1400.f;
     for (auto& p : placed_)
         p.c->setBounds (juce::Rectangle<float> (p.x, p.y, p.w, p.h).transformedBy (juce::AffineTransform::scale (scale_)).toNearestInt());
-    title_.setFont (fontOf (30.f * scale_, true));
-    notice_.setFont (fontOf (12.5f * scale_));
-    noteInfo_.setFont (fontOf (16.f * scale_));
-    audioInfo_.setFont (fontOf (12.f * scale_));
+    title_.setFont (fontOf (32.f * scale_, true));
+    notice_.setFont (fontOf (15.f * scale_));
+    noteInfo_.setFont (fontOf (19.f * scale_));
+    audioInfo_.setFont (fontOf (16.f * scale_));
 }
 
 void AetherEditor::timerCallback()
@@ -346,7 +352,7 @@ void AetherEditor::timerCallback()
                              : "Pitch from MIDI notes: last note " + noteName (n) + " (" + juce::String (n) + ")", juce::dontSendNotification);
     const int ch = proc_.inputChannels();
     const float peak = proc_.takeInputPeak();
-    audioInfo_.setText ("In Logic, choose the audio track you want to process in this plugin's Side Chain menu.\n\n"
+    audioInfo_.setText ("In Logic, choose the audio track you want to process in this plugin's Side Chain menu.\n\nMuting the source track does not stop the side chain.\n\n"
                         + (ch == 0 ? juce::String ("No audio input connected.")
                                    : juce::String (ch) + " channel(s) in, level "
                                          + (peak > 1.0e-5f ? juce::String (20.f * std::log10 (peak), 1) + " dB" : juce::String ("silent"))),
