@@ -1,6 +1,7 @@
 # Changelog
 
-## 0.2.1: Milestone 1 fix round (window)
+## 0.2.1: Milestone 1 fix round (window and Ambience default)
+- Result: PASSED on Nov 11, 2026 in Logic 11.2 on the M4 Mac mini, 44.1 kHz (labels readable, Audio In line shown, no wobble, clean Ambience at every fader position, Resonator and Echo fine together). Milestone 1 complete.
 - Window: labels about twice as large, MOD knobs larger (56 to 74 grid units), panel titles and button text larger, default
   size 1260 x 900. Layout otherwise as approved. Audio In box: added "Muting the source track does not stop the side chain."
   (Logic's side chain is taken before the source track's fader and mute; measured in the Milestone 1 test.)
@@ -10,7 +11,8 @@
   Bryn judged the tone the purest. Parameter order and range unchanged; saved projects keep their own value. Ruled out: the
   DelayLine.h change, the 44.1 kHz path, ARM64 versus Intel (see AetherUmbra-ambience-investigation.md).
 
-## 0.2.0: Milestone 1 (the engine runs; result to be filled in after the Logic test)
+## 0.2.0: Milestone 1 (the engine runs)
+- Result: first Logic test Nov 11, 2026 (M4 Mac mini, Logic 11.2, 44.1 kHz): 14 of 16 checks passed; Ambience wobble and unreadable labels fixed in 0.2.1.
 - The Oneiroi engine is compiled into the plugin: an AU Instrument (`aumu`) named `AetherUmbra` and a VST3. The two Milestone 0
   shells are gone. The engine runs at 48 kHz in blocks of 32 samples; a band-limited resampler and a block FIFO make it work at
   44.1, 48 and 96 kHz and any host block size (delay 32 samples at 48 kHz, 65 at 44.1 kHz, 132 at 96 kHz, reported to Logic).
