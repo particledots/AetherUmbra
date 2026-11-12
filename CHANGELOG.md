@@ -1,8 +1,12 @@
 # Changelog
 
 ## 1.0.0: Milestone 2 (the finished plugin)
-- Result: code complete; automatic tests pass (engine test incl. tempo and tail sections; plugin test 97 checks). Logic tests on the
-  M4 Mac mini (Logic 11.2) and the Intel Mac (macOS 12.7.8, Logic 10.7.8): results to be filled in after Bryn's checklist.
+- Result: PASSED on Nov 12, 2026: all checklist items on the M4 Mac mini (Logic 11.2, 44.1 kHz) and on the Intel Mac (macOS 12.7.8,
+  Logic 10.7.8); automatic tests pass (engine test incl. tempo and tail sections; plugin test 97 checks). Notes: Supersaw works; Wavetable
+  only sounds with a recording in the looper (same on the module). Open note: with Logic's tempo the Echo Density has only 9 steps (1/64 to one
+  beat), so repeats are close together (slapback at full right, Karplus-Strong-like to the left). The module without a clock cable has a smooth
+  Density up to about 4 s. A free-running Echo (Echo Sync parameter, at the end of the list) is the proposed fix.
+- Engine test: new diagnostic `AETHER_TEST_ONLY=sweep` prints where the echo taps land for each Density position, with and without tempo.
 - Logic's tempo: the host tempo (and song position) feeds the firmware's clock, one pulse per quarter note, 40 to 300 BPM; echo
   time and modulation / ambience auto-pan follow it, also when the tempo changes while playing. No host tempo: the firmware's
   own clock. The window shows the tempo.

@@ -8,7 +8,7 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 1.0.0, Milestone 2 (the finished plugin; code complete, final tests on both Macs pending). AetherUmbra is an AU **Instrument** (plus a VST3
+Version 1.0.0, Milestone 2 (the finished plugin; tested and passed on both Macs, with one open note on the Echo, see below). AetherUmbra is an AU **Instrument** (plus a VST3
 from the same code). It makes sound by itself (sine, supersaw or wavetable oscillator, looper), takes its pitch from MIDI notes
 (the last note played, held like a V/Oct voltage), and processes the audio of another Logic track chosen in the plugin's
 **Side Chain** menu. Looper, filter, resonator, echo, ambience, the internal modulation, Randomise and Undo/Redo all work.
@@ -28,6 +28,10 @@ settings ring much longer or for ever by the firmware's design (reverb Decay at 
 Repeats at full); Logic cuts those at 12 s when it bounces, so use a longer bounce tail or leave the plugin playing.
 
 Things that differ from the module:
+- With Logic's tempo the **Echo Density** knob works in the firmware's clocked way: steps from 1/64 of a beat to one beat (at 120 BPM: up to 0.5 s),
+  so the repeats are close together. The module without a clock cable has a smooth, much longer Density (up to about 4 s, with pitch-shifting
+  sweeps). A free (unsynced) Echo is planned as a fix (see CHANGELOG).
+- The **Wavetable** oscillator only sounds when the looper holds a recording (the same on the module).
 - The **Filter Noise** knob is new: the firmware has a noise level in its filter but no control for it. At the middle
   position the sound is exactly the firmware's (the noise is only heard when Resonance is above about 0.9, as on the module).
 - The **Looper** fader starts at 0. The firmware fills a new looper with quiet noise (the wavetable oscillator uses it as
@@ -64,3 +68,4 @@ Three milestones: 0 (done: two empty shells, found the right plugin type), 1 (do
 ## Test history
 - Milestone 0, Nov 11, 2026: automatic plugin test passes (56 checks, both shells: layouts, audio unchanged at 44.1, 48 and 96 kHz, tone follows notes and keeps the last note, no-audio-input case, saving and loading, window text), run natively on Apple silicon and through Rosetta on Intel. Test in Logic 11.2 on the M4 Mac mini (macOS Tahoe), 44.1 kHz: passed, 9 of 9 checks. Both shells install, are listed in the Plug-in Manager and load. Instrument: the test tone follows the notes you play and the pitch stays after release; the window shows the notes; the plug-in header has a Side Chain menu and, with an audio track chosen, the window shows the audio level. Music Effect: the audio of an audio track plays through unchanged, the window shows the level and the tone switch works; on a software instrument track it showed the audio level but received no notes (Bryn's reply, read as "no notes received"). Settings are kept after save and reopen; the uninstall script removes both. Install note from Bryn: the script also installed the VST3s; only the Audio Unit is wanted (fixed after the test, applies from the next build). Intel Mac not tested (not requested).
 - Milestone 1, Nov 11, 2026: Logic 11.2 on the M4 Mac mini, 44.1 kHz. First test (commit 193b543): 14 of 16 checks passed; two problems: the Ambience wobbled (slow level swing) and the window labels were too small to read. Fix round (0.2.1, commit 45d638e): larger labels and MOD knobs, side chain note in the Audio In box, Spacetime default 0.6 (the firmware blends a reversed copy of the sound into the direct sound between about 0.45 and 0.65, which swung a held note up to 5 times in level, one cycle every 1.5 s; the DelayLine.h change, the 44.1 kHz path and ARM64 versus Intel were ruled out). Retest: PASSED, all four checks (labels readable, Audio In line shown, fresh instance steady with no wobble, clean tone at every Ambience fader position; Resonator and Echo fine together with it). Findings: Logic's side chain is taken before the source track's fader and mute. Intel Mac not tested (Milestone 2).
+- Milestone 2, Nov 11-12, 2026: automatic tests: engine test (x86, ARM64 under qemu, address/undefined-behaviour sanitizers; tempo and tail sections), plugin test (97 checks) natively and through Rosetta on GitHub. Logic checklist (20 items) on the M4 Mac mini (Logic 11.2, 44.1 kHz) and on the Intel Mac (macOS 12.7.8, Logic 10.7.8): PASSED on both. Notes from Bryn: the Echo follows Logic's tempo, but with Density fully right the repeats are close together like a slapback echo, and turning left they blur into a Karplus-Strong-like tone (measured: with tempo, Density runs in 9 clock steps from 1/64 to 1 beat; without tempo it is smooth up to about 4 s); Supersaw works; Wavetable needs a recording in the looper (same on the module).

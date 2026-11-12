@@ -637,6 +637,33 @@ static double firstEchoSeconds (double bpm1, double bpm2, bool withTempo)
     return -1.0;
 }
 
+
+// Diagnostic (AETHER_TEST_ONLY=sweep): where do the echo taps land for each Density position? bpm 0 = no host tempo.
+static void sweepDensity (double bpm)
+{
+    const double rate = 48000.0;
+    std::printf ("\n== Density sweep, %s ==\n", bpm > 0 ? fmt ("host tempo %.0f BPM", bpm).c_str() : "no host tempo");
+    for (float d = 0.f; d <= 1.001f; d += 0.0625f)
+    {
+        Stream st; st.prepare (rate, 1024);
+        EngineParams p = withInput(); p.echoLevel = 1.f; p.echoRepeats = 0.f; p.echoDensity = d; st.setParams (p, 0.f, 0.f);
+        auto in = makeSilence (rate, 9.0);
+        const size_t clickAt = (size_t) (1.0 * rate);
+        in.l[clickAt] = in.r[clickAt] = 0.8f;
+        Audio out; out.rate = rate; out.l.resize (in.size()); out.r.resize (in.size());
+        for (size_t pos = 0; pos < in.size(); pos += 480)
+        {
+            if (bpm > 0) { Transport t; t.bpm = bpm; st.setTransport (t); }
+            st.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, (int) std::min<size_t> (480, in.size() - pos));
+        }
+        const size_t lat = (size_t) st.latencySamples();
+        std::string taps; int n = 0; size_t last = 0;
+        for (size_t i = clickAt + lat + 100; i < out.size() && n < 6; ++i)
+            if (std::fabs (out.l[i]) > 0.03f && (last == 0 || i - last > 240)) { taps += fmt (" %.3f", (double) (i - clickAt - lat) / rate); last = i; ++n; }
+        std::printf ("  Density %.2f: taps at (s)%s\n", d, taps.c_str());
+    }
+}
+
 static void testTempo()
 {
     std::printf ("\n== 5. Logic's tempo (the module's sync input) ==\n");
@@ -855,6 +882,7 @@ int main (int argc, char** argv)
         testFuzz();
         testInstances();
     }
+    if (one == "sweep") { sweepDensity (120.0); sweepDensity (0.0); return 0; }
     if (one.empty() || one == "tempo") testTempo();
     if (one.empty() || one == "tail") testTail();
     std::printf ("\n%s\n", failures == 0 ? "RESULT - all engine checks passed" : "RESULT - SOME ENGINE CHECKS FAILED");
