@@ -8,13 +8,24 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 0.2.1, Milestone 1 (fix round): the Oneiroi engine runs as an AU **Instrument** (plus a VST3 from the same code) with a rough
-but complete window (every control of the approved "module layout"). It makes sound by itself (sine, supersaw or
-wavetable oscillator, looper), takes its pitch from MIDI notes (the last note played, held like a V/Oct voltage), and
-processes the audio of another Logic track chosen in the plugin's **Side Chain** menu. Looper, filter, resonator, echo,
-ambience, the internal modulation, Randomise and Undo/Redo are all working. Not in this version: Logic's tempo for the
-echo and modulation (Milestone 2), a measured tail length (12 s is used, measured for the similar Iro-x effects), the final
-window design.
+Version 1.0.0, Milestone 2 (the finished plugin; code complete, final tests on both Macs pending). AetherUmbra is an AU **Instrument** (plus a VST3
+from the same code). It makes sound by itself (sine, supersaw or wavetable oscillator, looper), takes its pitch from MIDI notes
+(the last note played, held like a V/Oct voltage), and processes the audio of another Logic track chosen in the plugin's
+**Side Chain** menu. Looper, filter, resonator, echo, ambience, the internal modulation, Randomise and Undo/Redo all work.
+
+New in 1.0.0:
+- **Logic's tempo** drives the echo (Density is a note length) and the modulation / ambience auto-pan, like the module's clock
+  input. Logic's bar and beat position starts the beat in the right place. The window shows the tempo. With no tempo from the host
+  the firmware's own clock runs. Tempo is limited to 40 to 300 BPM. The **looper does not follow the tempo** (on the module an
+  external clock restarts the loop on every beat; in a plugin that would chop the loop up), so it plays freely.
+- **Tail length 12 s**, measured (see below), reported to Logic so Bounce in Place and export do not cut the reverb and echo.
+- **Final window**: coloured sections, glowing knob arcs, a modulation level bar, the tempo line.
+- Licence check finished (see Source and licence).
+
+Tail: the reverb, echo and resonator are measured as the time until the sound is 80 dB down after a noise burst, at 40, 60
+and 120 BPM. Normal settings die away in at most 10.5 s (echo Repeats 0.9, Density 0.5, 40 BPM), so 12 s is reported. A few
+settings ring much longer or for ever by the firmware's design (reverb Decay at full, resonator Feedback 0.9 and up, echo
+Repeats at full); Logic cuts those at 12 s when it bounces, so use a longer bounce tail or leave the plugin playing.
 
 Things that differ from the module:
 - The **Filter Noise** knob is new: the firmware has a noise level in its filter but no control for it. At the middle
@@ -36,17 +47,18 @@ universal (Apple silicon and Intel), needs macOS 11 or later, and is not signed 
 that downloaded it from the internet, macOS may ask for approval the first time (`INSTALL.txt` in the zip says what to do).
 
 ## Plan
-Three milestones: 0 (done: two empty shells, found the right plugin type), 1 (this one: the engine runs in Logic with a rough
-window, notes set the pitch), 2 (finished: Logic's tempo, tail, final window, licence check, both Macs).
+Three milestones: 0 (done: two empty shells, found the right plugin type), 1 (done: the engine runs in Logic, notes set the pitch),
+2 (this version: Logic's tempo, tail, final window, licence check; tested on both Macs with the checklist in the CHANGELOG).
 
 ## Source and licence
-- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). Two small changes
-  (Filter Noise, one memory-safety fix in the delay line); changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
+- `third_party/oneiroi-firmware`: Befaco's Oneiroi source, GPL-3.0 (`SOURCE.txt` names the exact commit). Four small changes
+  (Filter Noise, a memory-safety fix in the delay line, the echo following tempo changes, the looper not restarting on the clock); changes are marked "AetherUmbra change" and listed in `AETHERUMBRA-CHANGES.md`. The workflow checks this file by
   file on every build.
 - `src`: AetherUmbra's own code (the plugin, the window, the engine wrapper in `src/engine`, the OWL stand-ins in `src/engine/shim`).
 - `third_party/owlprogram`: the OpenWare / OwlProgram headers the firmware needs, unmodified (GPL).
 - The Oneiroi source contains code adapted from Mutable Instruments (MIT), ports from pbat.ch sndkit and a supersaw adapted
-  from a published thesis; see `THIRD-PARTY-LICENSES.txt`. Licences still to check are named there.
+  from a published thesis; see `THIRD-PARTY-LICENSES.txt` (all checked: nothing blocks passing the plugin on with its source and notices; the supersaw thesis PDF
+  could not be opened from here, only its published numbers are used).
 - AetherUmbra is released under GPL-3.0 (`LICENSE`). A build that is passed on must come with its source.
 
 ## Test history

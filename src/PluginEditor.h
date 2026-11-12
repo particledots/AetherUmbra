@@ -24,7 +24,7 @@ private:
     void timerCallback() override;
     void place (juce::Component&, float x, float y, float w, float h);
     Knob& addKnob (const char* paramId, const juce::String& name, float x, float y, float size, bool big = false);
-    Fader& addFader (const char* paramId, const juce::String& name, float x, float y, float h);
+    Fader& addFader (const char* paramId, const juce::String& name, float x, float y, float h, juce::Colour c);
     Segments& addSegments (const char* paramId, const juce::String& caption, const juce::StringArray& buttonNames, juce::Colour c, float x, float y, float w, float h, bool vertical = false);
     void panel (const juce::String& title, float x, float y, float w, float h, juce::Colour c);
 
@@ -35,11 +35,13 @@ private:
     struct Panel { juce::String title; float x, y, w, h; juce::Colour colour; };
     std::vector<Panel> panels_;
     juce::OwnedArray<juce::Component> owned_;
-    juce::Label title_, notice_, noteInfo_, audioInfo_;
+    juce::Label title_, notice_, noteInfo_, audioInfo_, tempoInfo_;
     juce::TextButton randomiseButton_ { "Randomise" }, undoButton_ { "Undo / Redo" }, clearButton_ { "Clear" };
     juce::ToggleButton recordButton_ { "Record" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> recordAtt_;
     juce::ComponentBoundsConstrainer constrainer_;
     float scale_ = 1.f;
+    float modShown_ = 0.f;      // the modulation value drawn in the Modulation panel
+    int tick_ = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AetherEditor)
 };

@@ -86,6 +86,17 @@ struct EngineParams
     float modType = 0.0f;                // 0 Lorenz, 1/6 sine, 2/6 ramp, 3/6 inverted ramp, 4/6 square, 5/6 sample and hold, 1 envelope follower
 };
 
+// What the host (Logic) says about tempo and transport. bpm <= 0 means "no tempo known": the engine then runs on the
+// firmware's own internal clock (one cycle of the looper length, 0.18 Hz), as the module does with nothing patched into
+// its sync input.
+struct Transport
+{
+    double bpm = 0.0;
+    bool hasPpq = false;       // ppq = position in quarter notes at the start of the host block
+    double ppq = 0.0;
+    bool playing = false;
+};
+
 // One Oneiroi engine. Not thread safe: one thread at a time per object. Every object has its own state.
 class Engine
 {
@@ -98,12 +109,18 @@ public:
     void setParams (const EngineParams& p);
     // Empties the looper (the module's Shift + Record). Takes effect in the next block.
     void clearLooper();
+    // Logic's tempo and transport. Replaces the module's sync jack: one clock pulse per quarter note (see AetherEngine.cpp).
+    void setTransport (const Transport& t);
     // Processes exactly kEngineBlockSize samples in place (48 kHz). The input goes in, the instrument's sound comes out.
     void processBlock (float* left, float* right);
 
     // For the window: the modulation value (about -1..1) and the oscillator pitch in Hz as the engine uses it.
     float modulationValue() const;
     float oscillatorHz() const;
+    // Position inside the current quarter note (0..1) of the clock that follows Logic's tempo; for tests.
+    double beatPhase() const;
+    // True while the firmware's clock follows Logic's tempo (false = its own internal clock); for tests.
+    bool clockIsExternal() const;
 
 private:
     struct Impl;

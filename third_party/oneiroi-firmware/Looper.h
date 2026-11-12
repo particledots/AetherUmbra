@@ -445,7 +445,11 @@ public:
     {
         input.multiply(patchCtrls_->looperResampling ? kLooperResampleGain : kLooperInputGain);
 
-        if (ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource && (trigger_.Process(patchState_->clockReset || patchState_->clockTick)))
+        // AetherUmbra change: with a clock on the sync input the module restarts the loop on every clock pulse. In the
+        // plugin Logic's tempo is always there, which would restart the loop on every beat, so the loop stays free
+        // (kLooperFollowsClock is false). Echo, modulation and auto-pan still follow the tempo.
+        constexpr bool kLooperFollowsClock = false;
+        if (kLooperFollowsClock && ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource && (trigger_.Process(patchState_->clockReset || patchState_->clockTick)))
         {
             triggered_ = true;
         }

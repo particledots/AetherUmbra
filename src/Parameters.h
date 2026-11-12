@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "AetherEngine.h"
+#include "AetherTail.h"
 #include <cmath>
 #include <vector>
 
@@ -8,9 +9,8 @@
 // New parameters are only ever added at the END of the list (see createLayout).
 namespace aether_params
 {
-// Tail length reported to Logic, in seconds. The reverb, echo and resonator are the same code as in the Iro-x plugin, whose
-// measurement was 12 s (see Iro-x). It is measured again for AetherUmbra in Milestone 2.
-constexpr double kTailSeconds = 12.0;
+// Tail length reported to Logic, in seconds: measured for AetherUmbra, see src/engine/AetherTail.h.
+constexpr double kTailSeconds = aether::kTailSeconds;
 
 struct FloatDef { const char* id; const char* name; float def; };
 

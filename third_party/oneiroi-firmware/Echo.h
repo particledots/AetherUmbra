@@ -32,6 +32,7 @@ private:
     HysteresisQuantizer densityQuantizer_;
 
     int clockRatiosIndex_;
+    int clockSamples_; // AetherUmbra change: the clock period the tap times were last set from
     float echoDensity_, oldDensity_;
 
     float levels_[kEchoTaps], outs_[kEchoTaps];
@@ -98,10 +99,14 @@ private:
         if (ClockSource::CLOCK_SOURCE_EXTERNAL == patchState_->clockSource)
         {
             int newIndex = densityQuantizer_.Process(value);
-            if (newIndex == clockRatiosIndex_ && externalClock_)
+            // AetherUmbra change: also set the tap times again when the clock period changed (a host tempo change). The
+            // original only looked at the density, so the echo stayed at the old tempo until Density was moved. This
+            // is the same fix that Befaco made in the Iroi's Echo.h.
+            if (newIndex == clockRatiosIndex_ && clockSamples_ == (int) patchState_->clockSamples && externalClock_)
             {
                 return;
             }
+            clockSamples_ = (int) patchState_->clockSamples;
             clockRatiosIndex_ = newIndex;
 
             float d = kModClockRatios[clockRatiosIndex_] * patchState_->clockSamples * kEchoExternalClockMultiplier;
@@ -159,6 +164,7 @@ public:
 
         echoDensity_ = 1.f;
         clockRatiosIndex_ = 0;
+        clockSamples_ = 0;
 
         xi_ = 1.f / patchState_->blockSize;
 

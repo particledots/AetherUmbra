@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0: Milestone 2 (the finished plugin)
+- Result: code complete; automatic tests pass (engine test incl. tempo and tail sections; plugin test 97 checks). Logic tests on the
+  M4 Mac mini (Logic 11.2) and the Intel Mac (macOS 12.7.8, Logic 10.7.8): results to be filled in after Bryn's checklist.
+- Logic's tempo: the host tempo (and song position) feeds the firmware's clock, one pulse per quarter note, 40 to 300 BPM; echo
+  time and modulation / ambience auto-pan follow it, also when the tempo changes while playing. No host tempo: the firmware's
+  own clock. The window shows the tempo.
+- Firmware changes (marked, listed): Echo.h follows clock changes (it stayed on the first tempo), Looper.h does not restart on
+  clock pulses (it would chop the loop on every beat).
+- Tail: 12 s, measured with a new engine-test section (limits and settings that ring longer are listed in `src/engine/AetherTail.h`).
+- Window: final look (section colours, glowing arcs, modulation bar, tempo line); same controls and layout as approved.
+- Licence check: sndkit (MIT / Unlicense), OwlProgram LibSource (GPL-3, with fastlog GPL-2+ and fastpow BSD notices),
+  LICENSE_VCV.md of the Oneiroi repo read; supersaw thesis PDF not readable from the build workspace (numbers only used).
+  The zip now contains LICENSE_VCV-Oneiroi-firmware.md and LICENSE-OwlProgram.txt; the workflow checks the notices are present.
+- Tests added: tempo (modulation Hz, echo time ratio, tempo changes, song position, looper unaffected, extremes), tail, and the plugin
+  seeing the host tempo, identical sound at host block sizes 256 and 512.
+
 ## 0.2.1: Milestone 1 fix round (window and Ambience default)
 - Result: PASSED on Nov 11, 2026 in Logic 11.2 on the M4 Mac mini, 44.1 kHz (labels readable, Audio In line shown, no wobble, clean Ambience at every fader position, Resonator and Echo fine together). Milestone 1 complete.
 - Window: labels about twice as large, MOD knobs larger (56 to 74 grid units), panel titles and button text larger, default

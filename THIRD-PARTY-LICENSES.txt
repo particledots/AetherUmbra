@@ -5,17 +5,22 @@ AetherUmbra third-party components
    (see third_party/oneiroi-firmware/LICENSE; LICENSE_VCV.md in the same folder is a dual-licensing note by the
    contributors, it does not change the GPL-3.0-or-later terms for this use; it will be read again in full before anything
    is shared). Imported at the commit named in third_party/oneiroi-firmware/SOURCE.txt, byte for byte, which the build
-   checks file by file. As of Milestone 1 the engine files are compiled into the plugin. Two small changes (Filter.h, DelayLine.h) are marked
-   "AetherUmbra change" and listed in third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md.
+   checks file by file. The engine files are compiled into the plugin. Four small changes (Filter.h, DelayLine.h, Echo.h,
+   Looper.h) are marked "AetherUmbra change" and listed in third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md.
    AetherUmbra is an unofficial port. It is not made, approved or supported by Befaco. The Befaco panel design and
    artwork are not used.
+   LICENSE_VCV.md (same folder), read in full in Milestone 2: the two contributors (Roberto Noris "hirnlego" and Ewan
+   Hemingway "hemmer") state that they agreed to dual licensing of the repository, that "the original GPL-v3-or-later
+   license still holds", and that a commercial licence may exist for specific uses, named as VCV closed-source and premium
+   plugins and the Befaco Oneiroi project. That is a second licence the contributors may grant to others; it takes nothing
+   away from the GPL that anyone already has. AetherUmbra uses the GPL; it has no commercial licence and does not need one.
    The Oneiroi source says that parts are ported or adapted from Mutable Instruments code by Emilie Gillet (comments in
    Commons.h "taken from pichenettes' stmlib" and "adapted from code found in the eurorack repo", Limiter.h "from
-   Rings", ParamController.h "from Plaits"); that code is covered in 1b. Two files, ChaosNoise.h and TGate.h, are ports
-   from pbat.ch sndkit, and StereoSuperSaw.h is adapted from a published thesis (Adam Szabo, KTH, 2010): the licences
-   of those two sources have NOT been checked yet and are to be checked in Milestone 2, before anything is shared.
+   Rings", ParamController.h "from Plaits"); that code is covered in 1a. ChaosNoise.h and TGate.h are ports from pbat.ch
+   sndkit (see 1c) and StereoSuperSaw.h uses the numbers of a published thesis (see 1d). All three were checked in
+   Milestone 2.
 
-1b. Mutable Instruments code (stmlib, Rings, Plaits; adapted inside the Oneiroi firmware)
+1a. Mutable Instruments code (stmlib, Rings, Plaits; adapted inside the Oneiroi firmware)
    Emilie Gillet / Mutable Instruments, https://github.com/pichenettes/eurorack and its stmlib folder.
    Licence: MIT (the code of the STM32F projects, which include Rings and Plaits; Mutable Instruments states this in the
    repository's README and on the module's "open source" pages, and the stmlib source files carry the MIT permission text
@@ -43,6 +48,65 @@ AetherUmbra third-party components
    derivative works ask that the name is not used for derivatives. AetherUmbra does not use it as a name; the window and the
    README say that AetherUmbra is not made, approved or supported by Mutable Instruments, and name them only to credit the code.
    Not covered by this notice and not used: the Mutable Instruments hardware designs and panel art (Creative Commons).
+
+1b. OwlProgram LibSource (third_party/owlprogram)
+   Rebel Technology, https://github.com/RebelTechnology/OwlProgram, GNU GPL version 3 (third_party/owlprogram/LICENSE).
+   31 library files (filters, oscillators, arrays, fast maths) copied UNMODIFIED, commit in
+   third_party/owlprogram/SOURCE.txt. The Oneiroi firmware is written against this library. What the OpenWare platform
+   provides on the module itself (heap, Patch object, random numbers, start-up of the lookup tables) is written new by
+   AetherUmbra in src/engine/shim/ and is not Rebel Technology code. Two of the copied files carry the notices of other
+   authors, which stay in the files and are repeated here:
+   - fastlog.c: "Lookup table generator for the ICSI logarithm function. Copyright (C) 2007 International Computer
+     Science Institute (Oriol Vinyals, Gerald Friedland); thanks to Harrison Ainsworth for his idea that doubled the
+     accuracy." GNU GPL version 2 or (at your option) any later version, so it may be used under GPL version 3.
+   - fastpow.c: Copyright (c) 2007, Harrison Ainsworth / HXA7241, http://www.hxa.name/articles/content/fast-pow-adjustable_hxa7241_2007.html
+     Three-clause BSD licence, whose text is:
+
+     Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+     following conditions are met: Redistributions of source code must retain the above copyright notice, this list of
+     conditions and the following disclaimer. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation and/or other materials provided with the
+     distribution. The name of the author may not be used to endorse or promote products derived from this software
+     without specific prior written permission.
+     THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+     THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+     AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+     NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+     HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+     OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+1c. pbat.ch sndkit (ChaosNoise.h and TGate.h in the Oneiroi firmware, "Ported from https://pbat.ch/sndkit/chaosnoise/" and
+   ".../tgate/")
+   Paul Batchelor, https://github.com/PaulBatchelor/sndkit (checked in Milestone 2 by reading the repository's COPYING,
+   UNLICENSE and LICENSE.MIT files, commit f85a543 of Jan 22, 2025). The sndkit text files (the literate source) are CC0;
+   the code made from them is dual-licensed "under the Unlicense or MIT": the user chooses. The Unlicense is a public domain
+   dedication. Either way this is compatible with GPL-3.0. To meet the MIT option the notice is given here:
+
+     The MIT License (MIT)
+     Copyright (c) 2022 Paul Batchelor
+     Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+     documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+     rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+     persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice
+     and this permission notice shall be included in all copies or substantial portions of the Software.
+     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+     WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+     COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   The sndkit page for chaosnoise says its chaos function is largely based on the Crackle generator of SuperCollider; the
+   function is a short formula, and the code here is the sndkit port, not SuperCollider code.
+
+1d. Supersaw (StereoSuperSaw.h)
+   The header says "Adapted from" the 2010 bachelor thesis "How to Emulate the Super Saw" by Adam Szabo (KTH Royal
+   Institute of Technology, Stockholm). What the firmware takes from it are numbers: the seven detune offsets (for example
+   0.11002313, 0.06288439, 0.01952356, 0.01991221, 0.06216538, 0.10745242) and the two mix curves (-0.73764 x^2 + 1.2841 x
+   + 0.044372 and -0.55366 x + 0.99785), which the thesis measured from a Roland JP-8000. Measured values and curve
+   fits are facts, not text or code. The code around them is Befaco's own (GPL). Not checked: the thesis document itself
+   could not be opened in the workspace (the fetch tool refused the KTH and web.archive.org addresses), so whether it
+   carries a copyright or licence line was not read. The thesis contains no program code that is used here. The thesis is
+   credited here and in the README. "Roland" and "JP-8000" are trademarks of Roland Corporation; they are named only to
+   say what the thesis measured.
 
 2. JUCE 8.0.6 (https://juce.com), downloaded at build time. JUCE is offered under the GNU AGPL version 3 or a paid
    JUCE licence; AetherUmbra uses the AGPL-3.0 option. GPL-3.0 and AGPL-3.0 code may be combined in one program (section 13

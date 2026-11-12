@@ -5,7 +5,7 @@
 // same coefficients as the KnobController / FaderController objects in Ui.h), and the oscillator pitch (octave +
 // Pitch knob + modulation + note), where a MIDI note takes the place of the V/Oct jack.
 // The CV inputs are not copied (scope item 3), so every CV amount is 0 and every CV value is 0.
-// Sync (Logic's tempo) is not connected yet: the firmware's own internal clock runs (Milestone 2).
+// Sync: Logic's tempo is turned into pulses on the module's sync input (feedClock below), as in the Iro-x plugin.
 #include "AetherEngine.h"
 #include "owl_runtime.h"
 #include "Oneiroi.h"
@@ -55,6 +55,16 @@ struct Engine::Impl
     Smooth looperSpeed, looperStart, looperLength, pitchKnob, detune, cutoff, resonance, resTune, resFeedback,
            echoDensity, echoRepeats, ambSpacetime, ambDecay, modLevel, modSpeed;
     float notePot = 0.f, noteCv = 0.f;
+
+    // Host tempo -> the firmware's sync input. The module has a sync jack: a pulse on it makes the firmware's clock
+    // (Clock.h) follow the pulse rate, and the modulation speed, the echo times and the auto-pan are then tied to it.
+    // Here the pulses are made from Logic's tempo: one per quarter note, each one block (32 samples) long.
+    Transport transport;
+    bool transportPending = false;
+    bool wasPlaying = false;
+    double beatPhase = 0.0;        // 0..1, position inside the current quarter note
+    bool pulseHigh = false;
+    static constexpr double kMinBpm = 40.0, kMaxBpm = 300.0;   // the firmware drops an external clock slower than 2 s per pulse
 
     Impl()
     {
@@ -199,10 +209,54 @@ struct Engine::Impl
         if (clearRequested) { state.clearLooperFlag = true; clearRequested = false; }
     }
 
+    // Called once per block of 32 samples, before the clock runs.
+    void feedClock()
+    {
+        if (pulseHigh)                       // the pulse lasts one block
+        {
+            state.syncIn = false;
+            state.tempo->trigger (false);
+            pulseHigh = false;
+        }
+        if (transport.bpm <= 0.0) { beatPhase = 0.0; return; }   // nothing known: internal clock
+
+        const double bpm = std::min (std::max (transport.bpm, kMinBpm), kMaxBpm);
+        const double blocksPerBeat = 60.0 * state.blockRate / bpm;
+
+        bool snapped = false;
+        if (transportPending)
+        {
+            transportPending = false;
+            if (transport.playing && transport.hasPpq)
+            {
+                const double target = transport.ppq - std::floor (transport.ppq);
+                double diff = target - beatPhase; diff -= std::floor (diff + 0.5);       // -0.5 .. 0.5
+                // Follow the song position when playback has just started or jumped; otherwise keep running smoothly.
+                if (! wasPlaying || std::fabs (diff) > 0.03) { beatPhase = target; snapped = true; }
+            }
+            wasPlaying = transport.playing;
+        }
+        if (! snapped) beatPhase += 1.0 / blocksPerBeat;
+
+        if (beatPhase >= 1.0)
+        {
+            beatPhase -= std::floor (beatPhase);
+            state.syncIn = true;
+            state.tempo->trigger (true);
+            // the firmware measures the time between pulses; give it the exact value so the tempo does not jitter
+            state.tempo->setPeriodInSamples ((size_t) std::lround (blocksPerBeat));
+            pulseHigh = true;
+        }
+    }
+
     void process (float* left, float* right)
     {
         RandomScope randomScope (rng);
+        feedClock();
         clock->Process();
+        // The firmware's Clock only takes over a new tempo when it differs by more than 48 blocks (it expects a noisy
+        // jack). The host tempo is exact, so follow it exactly.
+        if (state.clockSource == CLOCK_SOURCE_EXTERNAL) state.clockSamples = state.tempo->getPeriodInSamples();
         applyParams();
         firstBlock = false;
 
@@ -218,6 +272,9 @@ Engine::Engine() : impl (new Impl) {}
 Engine::~Engine() = default;
 void Engine::setParams (const EngineParams& p) { impl->params = p; }
 void Engine::clearLooper() { impl->clearRequested = true; }
+void Engine::setTransport (const Transport& t) { impl->transport = t; impl->transportPending = true; }
+double Engine::beatPhase() const { return impl->beatPhase; }
+bool Engine::clockIsExternal() const { return impl->state.clockSource == CLOCK_SOURCE_EXTERNAL; }
 void Engine::processBlock (float* left, float* right) { impl->process (left, right); }
 float Engine::modulationValue() const { return impl->state.modValue; }
 float Engine::oscillatorHz() const { return impl->ctrls.oscPitch; }

@@ -52,6 +52,7 @@ public:
     int inputChannels() const { return inputChannels_.load(); }    // channels of the audio input bus in the last block
     float takeInputPeak() { return inputPeak_.exchange (0.f); }    // largest input sample since the last call
     float modulationValue() const { return modValue_.load(); }
+    double hostBpm() const { return lastBpm_.load(); }             // Logic's tempo in the last block; 0 = none known
     int underruns() const { return stream_.underruns(); }
 
 private:
@@ -62,6 +63,7 @@ private:
     bool lastRandomise_ = false, lastUndo_ = false;
     std::atomic<int> lastNote_ { -1 }, inputChannels_ { 0 };
     std::atomic<float> inputPeak_ { 0.f }, modValue_ { 0.f };
+    std::atomic<double> lastBpm_ { 0.0 };
     float noteOffset_ = 0.f;
     std::vector<float> scratch_[4];
     int maxBlock_ = 0;

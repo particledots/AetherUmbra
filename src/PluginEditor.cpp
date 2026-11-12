@@ -3,7 +3,7 @@
 
 namespace
 {
-const juce::Colour kBg { 0xff0f1115 }, kPanel { 0xff191c22 }, kInk { 0xffe8eaee }, kDim { 0xff8e949e }, kTrack { 0xff2b3038 };
+const juce::Colour kBg { 0xff0c0e12 }, kPanel { 0xff1a1d24 }, kInk { 0xffeceef2 }, kDim { 0xff8e949e }, kTrack { 0xff2a2f38 };
 const juce::Colour kLooper { 0xfff0b23c }, kOsc { 0xff5ec8f2 }, kMod { 0xffb58cff }, kFilter { 0xff6fdc8c },
                    kReso { 0xfff07a9c }, kEcho { 0xffff9a5c }, kAmb { 0xff7aa2ff }, kRandom { 0xffe85d5d }, kMix { 0xffc8ccd4 };
 
@@ -32,14 +32,28 @@ struct AetherEditor::Look : juce::LookAndFeel_V4
         const auto c = b.getCentre();
         const auto colour = s.findColour (juce::Slider::rotarySliderFillColourId);
         const float thick = juce::jmax (2.f, r * 0.14f);
+        const bool bipolar = (bool) s.getProperties().getWithDefault ("bipolar", false);   // centre = off: the coloured arc starts at the top
+        const float ang = a0 + pos * (a1 - a0);
+        const float from = bipolar ? (a0 + a1) * 0.5f : a0;
         juce::Path track, arc;
         track.addCentredArc (c.x, c.y, r - thick * 0.5f, r - thick * 0.5f, 0.f, a0, a1, true);
         g.setColour (kTrack); g.strokePath (track, juce::PathStrokeType (thick));
-        const float ang = a0 + pos * (a1 - a0);
-        arc.addCentredArc (c.x, c.y, r - thick * 0.5f, r - thick * 0.5f, 0.f, a0, ang, true);
-        g.setColour (colour); g.strokePath (arc, juce::PathStrokeType (thick));
-        g.setColour (juce::Colour (0xff23272f)); g.fillEllipse (c.x - r * 0.68f, c.y - r * 0.68f, r * 1.36f, r * 1.36f);
-        juce::Path p; p.addRoundedRectangle (-r * 0.04f, -r * 0.62f, r * 0.08f, r * 0.34f, r * 0.03f);
+        if (std::abs (ang - from) > 0.01f)
+        {
+            arc.addCentredArc (c.x, c.y, r - thick * 0.5f, r - thick * 0.5f, 0.f, juce::jmin (from, ang), juce::jmax (from, ang), true);
+            g.setColour (colour.withAlpha (0.28f)); g.strokePath (arc, juce::PathStrokeType (thick * 1.7f));    // soft glow under the arc
+            g.setColour (colour); g.strokePath (arc, juce::PathStrokeType (thick));
+        }
+        if (bipolar)   // small tick at the centre position
+        {
+            const float mid = (a0 + a1) * 0.5f, r0 = r - thick * 1.05f, r1 = r + thick * 0.05f;
+            g.setColour (kDim); g.drawLine (c.x + std::sin (mid) * r0, c.y - std::cos (mid) * r0, c.x + std::sin (mid) * r1, c.y - std::cos (mid) * r1, juce::jmax (1.f, thick * 0.22f));
+        }
+        const float capR = r * 0.68f;
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff343a45), c.x, c.y - capR, juce::Colour (0xff1b1f26), c.x, c.y + capR, false));
+        g.fillEllipse (c.x - capR, c.y - capR, capR * 2.f, capR * 2.f);
+        g.setColour (juce::Colour (0x22ffffff)); g.drawEllipse (c.x - capR, c.y - capR, capR * 2.f, capR * 2.f, juce::jmax (1.f, r * 0.02f));
+        juce::Path p; p.addRoundedRectangle (-r * 0.045f, -r * 0.62f, r * 0.09f, r * 0.34f, r * 0.03f);
         g.setColour (kInk); g.fillPath (p, juce::AffineTransform::rotation (ang).translated (c.x, c.y));
     }
     void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider& s) override
@@ -74,6 +88,9 @@ struct AetherEditor::Knob : juce::Component
         slider.setColour (juce::Slider::rotarySliderFillColourId, c);
         slider.setPopupDisplayEnabled (true, true, nullptr);
         slider.setDoubleClickReturnValue (true, 0.0);
+        // controls whose middle position means "off" or "no change" get an arc that starts at the middle
+        const juce::String pid (id);
+        if (pid == "osc_pitch" || pid == "osc_unison" || pid == "looper_filter" || pid == "echo_filter") slider.getProperties().set ("bipolar", true);
         addAndMakeVisible (slider);
         label.setText (name, juce::dontSendNotification);
         label.setJustificationType (juce::Justification::centred);
@@ -188,9 +205,9 @@ AetherEditor::Knob& AetherEditor::addKnob (const char* id, const juce::String& n
     place (*k, x, y, size, size + (big ? 28.f : 25.f));
     return *k;
 }
-AetherEditor::Fader& AetherEditor::addFader (const char* id, const juce::String& name, float x, float y, float h)
+AetherEditor::Fader& AetherEditor::addFader (const char* id, const juce::String& name, float x, float y, float h, juce::Colour c)
 {
-    auto* f = new Fader (proc_, id, name, kMix);
+    auto* f = new Fader (proc_, id, name, c);
     owned_.add (f); addAndMakeVisible (f);
     place (*f, x, y, 70.f, h);
     return *f;
@@ -224,8 +241,10 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
     noteInfo_.setJustificationType (juce::Justification::centredRight);
     audioInfo_.setColour (juce::Label::textColourId, kDim);
     audioInfo_.setJustificationType (juce::Justification::topLeft);
-    for (auto* l : { &title_, &notice_, &noteInfo_, &audioInfo_ }) { addAndMakeVisible (*l); l->setMinimumHorizontalScale (1.0f); }
-    place (title_, 20, 6, 330, 40); place (notice_, 20, 48, 1270, 24); place (noteInfo_, 760, 10, 530, 32);
+    tempoInfo_.setColour (juce::Label::textColourId, kMod);
+    tempoInfo_.setJustificationType (juce::Justification::centredLeft);
+    for (auto* l : { &title_, &notice_, &noteInfo_, &audioInfo_, &tempoInfo_ }) { addAndMakeVisible (*l); l->setMinimumHorizontalScale (1.0f); }
+    place (title_, 20, 6, 290, 40); place (tempoInfo_, 322, 10, 430, 32); place (notice_, 20, 48, 1270, 24); place (noteInfo_, 760, 10, 530, 32);
     addKnob ("output_level", "Out", 1318, 0, 56);
 
     // Looper (three columns centred at x 110, 270, 430; the small MOD knobs are 74 wide)
@@ -296,7 +315,8 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     panel ("LEVELS", 245, 712, 350, 283, kMix);
     const char* f1[][2] = { { "looper_volume", "Looper" }, { "osc1_volume", "Sine" }, { "osc2_volume", "SS / WT" }, { "input_volume", "Input" } };
-    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], 258.f + 84.f * (float) i, 748, 236);
+    const juce::Colour c1[] = { kLooper, kOsc, kOsc, kMix };
+    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], 258.f + 84.f * (float) i, 748, 236, c1[i]);
 
     panel ("RANDOM", 605, 712, 210, 283, kRandom);
     addSegments ("random_mode", "What", { "All", "Osc", "Loop", "FX" }, kRandom, 618, 744, 184, 56);
@@ -309,13 +329,14 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     panel ("LEVELS", 825, 712, 350, 283, kMix);
     const char* f2[][2] = { { "filter_level", "Filter" }, { "resonator_volume", "Resonator" }, { "echo_volume", "Echo" }, { "ambience_volume", "Ambience" } };
-    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], 838.f + 84.f * (float) i, 748, 236);
+    const juce::Colour c2[] = { kFilter, kReso, kEcho, kAmb };
+    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], 838.f + 84.f * (float) i, 748, 236, c2[i]);
 
     panel ("AUDIO IN", 1185, 712, 205, 283, kMix);
     addAndMakeVisible (audioInfo_); place (audioInfo_, 1195, 744, 185, 244);
 
     timerCallback();
-    startTimerHz (10);
+    startTimerHz (30);
     setSize (1260, 900);
 }
 
@@ -323,14 +344,31 @@ AetherEditor::~AetherEditor() { stopTimer(); setLookAndFeel (nullptr); }
 
 void AetherEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (kBg);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff12151b), 0.f, 0.f, kBg, 0.f, (float) getHeight(), false));
+    g.fillAll();
     for (const auto& p : panels_)
     {
         const auto r = juce::Rectangle<float> (p.x, p.y, p.w, p.h) * scale_;
-        g.setColour (kPanel); g.fillRoundedRectangle (r, 8.f * scale_);
-        g.setColour (p.colour.withAlpha (0.55f)); g.drawRoundedRectangle (r.reduced (0.5f), 8.f * scale_, 1.f);
-        g.setColour (p.colour); g.setFont (fontOf (18.f * scale_, true));
-        g.drawFittedText (p.title, juce::Rectangle<int> ((int) (r.getX() + 9.f * scale_), (int) (r.getY() + 6.f * scale_), (int) (r.getWidth() - 14.f * scale_), (int) (24.f * scale_)), juce::Justification::centredLeft, 1, 0.8f);
+        g.setGradientFill (juce::ColourGradient (kPanel.brighter (0.10f), 0.f, r.getY(), kPanel.darker (0.12f), 0.f, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 8.f * scale_);
+        g.setColour (p.colour.withAlpha (0.45f)); g.drawRoundedRectangle (r.reduced (0.5f), 8.f * scale_, 1.f);
+        g.setColour (juce::Colour (0x10ffffff)); g.drawRoundedRectangle (r.reduced (1.5f), 7.f * scale_, 1.f);    // faint inner highlight
+        // coloured tab in front of the title, then the title
+        g.setColour (p.colour); g.fillRoundedRectangle (r.getX() + 9.f * scale_, r.getY() + 10.f * scale_, 5.f * scale_, 17.f * scale_, 2.f * scale_);
+        g.setFont (fontOf (18.f * scale_, true));
+        g.drawFittedText (p.title, juce::Rectangle<int> ((int) (r.getX() + 21.f * scale_), (int) (r.getY() + 6.f * scale_), (int) (r.getWidth() - 26.f * scale_), (int) (24.f * scale_)), juce::Justification::centredLeft, 1, 0.8f);
+    }
+
+    // The modulation source: a bar that swings left and right with the current modulation value (-1 .. 1).
+    {
+        const auto r = juce::Rectangle<float> (545.f, 662.f, 95.f, 22.f) * scale_;
+        g.setColour (kTrack); g.fillRoundedRectangle (r, 5.f * scale_);
+        const float mid = r.getCentreX(), half = r.getWidth() * 0.5f - 2.f * scale_, v = juce::jlimit (-1.f, 1.f, modShown_);
+        g.setColour (kMod);
+        g.fillRoundedRectangle (juce::Rectangle<float> (juce::jmin (mid, mid + v * half), r.getY() + 3.f * scale_, std::abs (v * half) + 1.f, r.getHeight() - 6.f * scale_), 3.f * scale_);
+        g.setColour (kInk.withAlpha (0.55f)); g.drawLine (mid, r.getY() + 2.f * scale_, mid, r.getBottom() - 2.f * scale_, 1.f);
+        g.setColour (kDim); g.setFont (fontOf (14.f * scale_));
+        g.drawText ("MOD OUT", r.translated (0.f, 22.f * scale_).toNearestInt(), juce::Justification::centred);
     }
 }
 
@@ -342,14 +380,28 @@ void AetherEditor::resized()
     title_.setFont (fontOf (32.f * scale_, true));
     notice_.setFont (fontOf (15.f * scale_));
     noteInfo_.setFont (fontOf (19.f * scale_));
+    tempoInfo_.setFont (fontOf (19.f * scale_, true));
     audioInfo_.setFont (fontOf (16.f * scale_));
 }
 
 void AetherEditor::timerCallback()
 {
+    // the modulation bar moves smoothly (30 times a second); the texts are refreshed 10 times a second
+    modShown_ = proc_.modulationValue();
+    repaint (juce::Rectangle<float> (545.f, 655.f, 95.f, 50.f).transformedBy (juce::AffineTransform::scale (scale_)).toNearestInt());
+    if (tick_++ % 3 != 0) return;
+
     const int n = proc_.lastNote();
     noteInfo_.setText (n < 0 ? juce::String ("Pitch from MIDI notes: no note played yet (plays C4)")
                              : "Pitch from MIDI notes: last note " + noteName (n) + " (" + juce::String (n) + ")", juce::dontSendNotification);
+    const double bpm = proc_.hostBpm();
+    if (bpm <= 0.0) tempoInfo_.setText ("Tempo: none from Logic, own clock", juce::dontSendNotification);
+    else
+    {
+        juce::String t = "Tempo: " + juce::String (bpm, 1) + " BPM from Logic";
+        if (bpm < 40.0 || bpm > 300.0) t << " (used as " << juce::String (juce::jlimit (40.0, 300.0, bpm), 0) << ")";
+        tempoInfo_.setText (t, juce::dontSendNotification);
+    }
     const int ch = proc_.inputChannels();
     const float peak = proc_.takeInputPeak();
     audioInfo_.setText ("In Logic, choose the audio track you want to process in this plugin's Side Chain menu.\n\nMuting the source track does not stop the side chain.\n\n"

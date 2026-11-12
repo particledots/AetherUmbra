@@ -143,6 +143,8 @@ jobs:
           cp third_party/oneiroi-firmware/SOURCE.txt dist/SOURCE-Oneiroi-firmware.txt
           cp third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md dist/CHANGES-to-Oneiroi-firmware.md
           cp third_party/oneiroi-firmware/LICENSE dist/LICENSE-Oneiroi-firmware.txt
+          cp third_party/oneiroi-firmware/LICENSE_VCV.md dist/LICENSE_VCV-Oneiroi-firmware.md
+          cp third_party/owlprogram/LICENSE dist/LICENSE-OwlProgram.txt
           # Both slices present, and the minimum macOS version baked into each (should say 11.0):
           for c in dist/*.component dist/*.vst3; do echo "$c: $(lipo -archs "$c"/Contents/MacOS/*)"; done
           for a in arm64 x86_64; do echo "== $a"; lipo -thin $a "dist/AetherUmbra.component/Contents/MacOS/AetherUmbra" -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
@@ -164,7 +166,11 @@ jobs:
           [ -x dist/Uninstall-AetherUmbra.command ] || { echo "::error::PACKAGE missing Uninstall-AetherUmbra.command"; exit 1; }
           # The Mutable Instruments (MIT) notice must be in the download.
           grep -q "Permission is hereby granted" dist/THIRD-PARTY-LICENSES.txt || { echo "::error::PACKAGE THIRD-PARTY-LICENSES.txt lacks the MIT notice for the Mutable Instruments code"; exit 1; }
-          for f in LICENSE THIRD-PARTY-LICENSES.txt SOURCE-Oneiroi-firmware.txt CHANGES-to-Oneiroi-firmware.md LICENSE-Oneiroi-firmware.txt SOURCE.txt README.md; do [ -s "dist/$f" ] || { echo "::error::PACKAGE missing $f"; exit 1; }; done
+          # The other notices the licences ask us to pass on (sndkit MIT, the fast-pow BSD text, the ICSI fast-log notice, OwlProgram).
+          for needle in "Copyright (c) 2022 Paul Batchelor" "Copyright (c) 2007, Harrison Ainsworth" "ICSI logarithm function" "OwlProgram LibSource" "How to Emulate the Super Saw"; do
+            grep -q "$needle" dist/THIRD-PARTY-LICENSES.txt || { echo "::error::PACKAGE THIRD-PARTY-LICENSES.txt lacks the notice: $needle"; exit 1; }
+          done
+          for f in LICENSE THIRD-PARTY-LICENSES.txt SOURCE-Oneiroi-firmware.txt CHANGES-to-Oneiroi-firmware.md LICENSE-Oneiroi-firmware.txt LICENSE_VCV-Oneiroi-firmware.md LICENSE-OwlProgram.txt SOURCE.txt README.md; do [ -s "dist/$f" ] || { echo "::error::PACKAGE missing $f"; exit 1; }; done
           ls -la dist
           ditto -c -k --keepParent dist AetherUmbra-macOS.zip
 

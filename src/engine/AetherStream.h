@@ -43,6 +43,8 @@ public:
     void setParams (const EngineParams& p, float inputGainDb, float outputGainDb);
     // Empties the looper (the module's Shift + Record).
     void clearLooper() { if (engine_) engine_->clearLooper(); }
+    // Logic's tempo and transport, once per host block (before process).
+    void setTransport (const Transport& t) { if (engine_) engine_->setTransport (t); }
     // in / out: 2 channels each (a mono input is passed as the same pointer twice). In place is allowed.
     void process (const float* inL, const float* inR, float* outL, float* outR, int n);
     // Tests only: skip the engine (the audio then only goes through the resamplers and the block FIFO).
@@ -53,6 +55,8 @@ public:
     int nonFiniteCount() const { return nonFinite_; }
     float modulationValue() const { return engine_ ? engine_->modulationValue() : 0.f; }
     float oscillatorHz() const { return engine_ ? engine_->oscillatorHz() : 0.f; }
+    double beatPhase() const { return engine_ ? engine_->beatPhase() : 0.0; }
+    bool clockIsExternal() const { return engine_ && engine_->clockIsExternal(); }
 
 private:
     struct Fifo

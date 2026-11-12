@@ -72,9 +72,24 @@ void AetherProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     for (int ch = 0; ch < numIn; ++ch) peak = std::max (peak, buffer.getMagnitude (ch, 0, total));
     if (peak > inputPeak_.load()) inputPeak_.store (peak);
 
+    // Logic's tempo and song position replace the module's sync jack (echo times, modulation speed and auto-pan follow it).
+    aether::Transport transport;
+    if (auto* head = getPlayHead())
+        if (auto info = head->getPosition())
+        {
+            if (auto bpm = info->getBpm()) transport.bpm = *bpm;
+            if (auto ppq = info->getPpqPosition()) { transport.hasPpq = true; transport.ppq = *ppq; }
+            transport.playing = info->getIsPlaying();
+        }
+    lastBpm_.store (transport.bpm);
+    const double rate = getSampleRate();
+
     for (int pos = 0; pos < total; pos += maxBlock_)
     {
         const int n = std::min (maxBlock_, total - pos);
+        aether::Transport t = transport;
+        if (t.hasPpq && t.playing && rate > 0.0) t.ppq += t.bpm / 60.0 * (double) pos / rate;
+        stream_.setTransport (t);
         // copy the input first: the output goes into the same buffer. No input at all = silence.
         if (numIn >= 1) std::copy (buffer.getReadPointer (0) + pos, buffer.getReadPointer (0) + pos + n, scratch_[0].begin());
         else std::fill (scratch_[0].begin(), scratch_[0].begin() + n, 0.f);

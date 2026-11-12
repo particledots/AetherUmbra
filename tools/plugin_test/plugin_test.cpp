@@ -21,6 +21,20 @@ void check (bool ok, const juce::String& what)
     if (! ok) ++failures;
 }
 
+// A pretend host that tells the plugin a tempo and a song position.
+struct FakePlayHead : juce::AudioPlayHead
+{
+    double bpm = 120.0, ppq = 0.0; bool playing = true, hasBpm = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        if (hasBpm) info.setBpm (bpm);
+        info.setPpqPosition (ppq);
+        info.setIsPlaying (playing);
+        return info;
+    }
+};
+
 // Counts how often a control was grabbed and let go (the randomiser must do both for every control it moves).
 struct GestureCounter : juce::AudioProcessorParameter::Listener
 {
@@ -256,6 +270,71 @@ int main (int argc, char** argv)
 
     // ---- tail ----
     check (proc.getTailLengthSeconds() == aether_params::kTailSeconds && proc.getTailLengthSeconds() >= 10.0, "tail length reported to the host: " + juce::String (proc.getTailLengthSeconds(), 1) + " s");
+
+    // ---- Logic's tempo ----
+    {
+        FakePlayHead head;
+        auto makeWet = [&] (AetherProcessor& p)
+        {
+            for (const char* id : { "echo_volume", "ambience_volume", "resonator_volume" }) setParam (p, id, 0.8f);
+            setParam (p, "mod_level", 1.0f);
+            setParam (p, "mod_type", 1.0f / 6.0f);
+            setParam (p, "filter_cutoff", 0.5f);
+            setParam (p, "filter_cutoff_mod", 1.0f);
+            setParam (p, "looper_volume", 0.0f);
+        };
+        auto runWith = [&] (double bpm, bool hasBpm, std::vector<float>& out, double& shownBpm)
+        {
+            AetherProcessor p; makeWet (p);
+            head.bpm = bpm; head.hasBpm = hasBpm; head.ppq = 0.0; head.playing = true;
+            p.setPlayHead (&head);
+            prepare (p, 48000.0, 512);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 60; ++b)
+            {
+                juce::AudioBuffer<float> buf (2, 512); fillSignal (buf, b * 512);
+                p.processBlock (buf, midi);
+                head.ppq += head.bpm / 60.0 * 512.0 / 48000.0;
+                for (int i = 0; i < 512; ++i) out.push_back (buf.getSample (0, i));
+            }
+            shownBpm = p.hostBpm();
+            p.setPlayHead (nullptr);
+        };
+        std::vector<float> a60, a120, a120b, none; double s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+        runWith (60.0, true, a60, s1); runWith (120.0, true, a120, s2); runWith (120.0, true, a120b, s3); runWith (0.0, false, none, s4);
+        check (s1 == 60.0 && s2 == 120.0, "the plugin sees the host tempo (" + juce::String (s1, 0) + " and " + juce::String (s2, 0) + " BPM)");
+        check (s4 == 0.0, "no tempo from the host: the plugin knows it has none");
+        check (a120 == a120b, "the same tempo and song position give identical audio");
+        double d = 0; for (size_t i = 0; i < a60.size(); ++i) d += std::abs (a60[i] - a120[i]);
+        check (d / (double) a60.size() > 1e-3, "a different host tempo changes the modulation and echo (tempo-synced parts)");
+        double d2 = 0; for (size_t i = 0; i < none.size(); ++i) d2 += std::abs (none[i] - a120[i]);
+        check (d2 / (double) none.size() > 1e-3, "no host tempo (internal clock) sounds different from 120 BPM");
+        bool fin = true; for (float v : a60) fin = fin && std::isfinite (v);
+        check (fin, "audio stays finite with host tempo");
+        // different host block sizes give the same sound at the same tempo
+        {
+            auto runBlocks = [&] (int blockSize, std::vector<float>& out)
+            {
+                AetherProcessor p; makeWet (p);
+                head.bpm = 100.0; head.hasBpm = true; head.ppq = 0.0; head.playing = true;
+                p.setPlayHead (&head);
+                prepare (p, 48000.0, blockSize);
+                juce::MidiBuffer midi;
+                const int total = 48000;
+                for (int pos = 0; pos < total; pos += blockSize)
+                {
+                    juce::AudioBuffer<float> buf (2, blockSize); fillSignal (buf, pos);
+                    p.processBlock (buf, midi);
+                    head.ppq += head.bpm / 60.0 * (double) blockSize / 48000.0;
+                    for (int i = 0; i < blockSize; ++i) out.push_back (buf.getSample (0, i));
+                }
+                p.setPlayHead (nullptr);
+            };
+            std::vector<float> b256, b512; runBlocks (256, b256); runBlocks (512, b512);
+            double dm = 0; for (size_t i = 0; i < std::min (b256.size(), b512.size()); ++i) dm = std::max (dm, (double) std::abs (b256[i] - b512[i]));
+            check (dm < 1e-4, "with host tempo, host block sizes 256 and 512 give the same sound (largest difference " + juce::String (dm, 6) + ")");
+        }
+    }
 
     // ---- the randomiser ----
     {
