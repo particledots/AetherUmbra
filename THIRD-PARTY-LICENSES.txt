@@ -1,0 +1,63 @@
+AetherUmbra third-party components
+
+1. Oneiroi firmware (third_party/oneiroi-firmware)
+   Befaco, https://github.com/Befaco/Oneiroi, written by Roberto Noris (hirnlego) with contributors, GNU GPL version 3
+   (see third_party/oneiroi-firmware/LICENSE; LICENSE_VCV.md in the same folder is a dual-licensing note by the
+   contributors, it does not change the GPL-3.0-or-later terms for this use; it will be read again in full before anything
+   is shared). Imported at the commit named in third_party/oneiroi-firmware/SOURCE.txt, byte for byte, which the build
+   checks file by file. As of Milestone 0 the firmware is not compiled into the plugin yet.
+   AetherUmbra is an unofficial port. It is not made, approved or supported by Befaco. The Befaco panel design and
+   artwork are not used.
+   The Oneiroi source says that parts are ported or adapted from Mutable Instruments code by Emilie Gillet (comments in
+   Commons.h "taken from pichenettes' stmlib" and "adapted from code found in the eurorack repo", Limiter.h "from
+   Rings", ParamController.h "from Plaits"); that code is covered in 1b. Two files, ChaosNoise.h and TGate.h, are ports
+   from pbat.ch sndkit, and StereoSuperSaw.h is adapted from a published thesis (Adam Szabo, KTH, 2010): the licences
+   of those two sources have NOT been checked yet and are to be checked in Milestone 2, before anything is shared.
+
+1b. Mutable Instruments code (stmlib, Rings, Plaits; adapted inside the Oneiroi firmware)
+   Emilie Gillet / Mutable Instruments, https://github.com/pichenettes/eurorack and its stmlib folder.
+   Licence: MIT (the code of the STM32F projects, which include Rings and Plaits; Mutable Instruments states this in the
+   repository's README and on the module's "open source" pages, and the stmlib source files carry the MIT permission text
+   in their headers). Checked in Milestone 2 from those public statements; the Oneiroi source copies carry no licence header
+   of their own for the adapted parts, so the notice is given here, as the MIT licence requires:
+
+     Copyright (c) Emilie Gillet, as stated in the headers of the original files (some older files carry an earlier
+     form of her name).
+
+     Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+     documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+     the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and
+     to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+     The above copyright notice and this permission notice shall be included in all copies or substantial portions of
+     the Software.
+
+     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+     THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+     AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+     TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+     SOFTWARE.
+
+   MIT code may be used inside a GPL-3.0 program. "Mutable Instruments" is a registered trademark; its guidelines for
+   derivative works ask that the name is not used for derivatives. AetherUmbra does not use it as a name; the window and the
+   README say that AetherUmbra is not made, approved or supported by Mutable Instruments, and name them only to credit the code.
+   Not covered by this notice and not used: the Mutable Instruments hardware designs and panel art (Creative Commons).
+
+2. JUCE 8.0.6 (https://juce.com), downloaded at build time. JUCE is offered under the GNU AGPL version 3 or a paid
+   JUCE licence; AetherUmbra uses the AGPL-3.0 option. GPL-3.0 and AGPL-3.0 code may be combined in one program (section 13
+   of both licences). Parts that JUCE brings along and that are, or may be, inside the plugin:
+   - AudioUnitSDK, Apple Inc.: Apache License 2.0
+   - VST3 SDK, Steinberg Media Technologies GmbH: used under its GPL-3.0 option
+   - zlib and pnglib: zlib licence; jpeglib: Independent JPEG Group licence; FLAC and Ogg Vorbis: BSD;
+     HarfBuzz: Old MIT; SheenBidi: Apache License 2.0
+   The licence text of each is in the JUCE source: https://github.com/juce-framework/JUCE/tree/8.0.6
+
+3. Sharing. Personal use on your own Macs needs nothing more. Whoever passes a build on must pass on LICENSE, this
+   file and the notices with it and offer the complete source (SOURCE.txt in the download names the exact commit).
+   Not legal advice. The name "AetherUmbra" does not contain "Oneiroi" or "Befaco"; they appear only in the truthful
+   "based on" statement.
+   VST is a registered trademark of Steinberg Media Technologies GmbH. Audio Units, Logic Pro and macOS are
+   trademarks of Apple Inc.
+
+AetherUmbra itself is released under GPL-3.0 (see LICENSE). The complete source for any binary is in this repository:
+https://github.com/particledots/AetherUmbra

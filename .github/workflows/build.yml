@@ -1,0 +1,146 @@
+name: Build plugin (macOS)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:      # adds a "Run workflow" button in the Actions tab
+
+jobs:
+  build-macos:
+    runs-on: macos-26     # Apple silicon runner, same as the Iro-x workflow
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (universal, macOS 11+)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DAU_BUILD_PLUGIN_TEST=ON
+
+      - name: Check the Oneiroi source file by file (changes must be marked and listed)
+        run: |
+          # Every file in the firmware folder must be identical to Befaco/Oneiroi at the commit named in SOURCE.txt,
+          # unless that file carries the words "AetherUmbra change" AND is named in AETHERUMBRA-CHANGES.md.
+          COMMIT=$(sed -n 's/^Commit: \([0-9a-f]\{40\}\).*/\1/p' third_party/oneiroi-firmware/SOURCE.txt)
+          echo "Oneiroi commit named in SOURCE.txt: $COMMIT"
+          [ -n "$COMMIT" ] || { echo "::error::SOURCE.txt does not name a commit"; exit 1; }
+          git clone --quiet https://github.com/Befaco/Oneiroi /tmp/oneiroi-original
+          git -C /tmp/oneiroi-original checkout --quiet "$COMMIT"
+          CHANGED=0
+          for f in $(git -C /tmp/oneiroi-original ls-files); do
+            n=$(basename "$f")
+            [ -e "third_party/oneiroi-firmware/$n" ] || { echo "::error::FIRMWARE file $n is missing from third_party/oneiroi-firmware"; exit 1; }
+            if ! cmp -s "/tmp/oneiroi-original/$f" "third_party/oneiroi-firmware/$n"; then
+              grep -q "AetherUmbra change" "third_party/oneiroi-firmware/$n" || { echo "::error::FIRMWARE file $n differs from Befaco/Oneiroi and is not marked AetherUmbra change"; exit 1; }
+              grep -q "$n" third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md || { echo "::error::FIRMWARE file $n is changed but not listed in AETHERUMBRA-CHANGES.md"; exit 1; }
+              echo "changed and listed: $n"; CHANGED=$((CHANGED+1))
+            fi
+          done
+          # No extra files (SOURCE.txt and AETHERUMBRA-CHANGES.md are ours)
+          for f in third_party/oneiroi-firmware/*; do
+            n=$(basename "$f")
+            case "$n" in SOURCE.txt|AETHERUMBRA-CHANGES.md) continue ;; esac
+            git -C /tmp/oneiroi-original ls-files --error-unmatch "$n" > /dev/null 2>&1 || { echo "::error::FIRMWARE extra file $n is not in Befaco/Oneiroi"; exit 1; }
+          done
+          echo "firmware check passed ($CHANGED file(s) changed, all marked and listed)"
+
+      - name: Plugin test (the plugin code with a pretend host, both shells, window pictures)
+        run: |
+          cmake --build build --target AetherUmbra_PluginTest -j4 > plugin_test_log.txt 2>&1 || {
+            grep -E "error|Error" plugin_test_log.txt | head -8 | while IFS= read -r line; do echo "::error::PLUGIN TEST BUILD - $line"; done
+            tail -20 plugin_test_log.txt; exit 1; }
+          TEST_BIN=$(find build -type f -name AetherUmbra_PluginTest | head -1)
+          [ -n "$TEST_BIN" ] || { echo "::error::PLUGIN TEST program not found after the build"; exit 1; }
+          file "$TEST_BIN"
+          mkdir -p test-renders
+          set +e
+          arch -arm64 "$TEST_BIN" test-renders > plugin_test_result.txt 2>&1
+          STATUS=$?
+          set -e
+          cat plugin_test_result.txt
+          if [ $STATUS -ne 0 ] || ! grep -q "RESULT - all plugin checks passed" plugin_test_result.txt; then
+            echo "::error::PLUGIN TEST stopped with exit status $STATUS; last line - $(tail -1 plugin_test_result.txt)"
+            grep FAIL plugin_test_result.txt | while IFS= read -r line; do echo "::error::PLUGIN TEST - $line"; done
+            exit 1
+          fi
+          # Intel half through Rosetta when available. Reported, does not stop the build.
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 "$TEST_BIN" > plugin_test_result_intel.txt 2>&1 || true
+            tail -2 plugin_test_result_intel.txt
+            grep -q "RESULT - all plugin checks passed" plugin_test_result_intel.txt && echo "::notice::PLUGIN TEST intel (Rosetta) - all checks passed" || echo "::warning::PLUGIN TEST intel (Rosetta) did not pass - $(tail -1 plugin_test_result_intel.txt)"
+          else
+            echo "::notice::PLUGIN TEST intel - Rosetta not available on this runner, skipped"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AetherUmbra-test-renders
+          path: test-renders
+
+      - name: Build AU + VST3 (both shells)
+        run: |
+          # Compiler errors are also written as annotations (shown on the run page and readable through the API).
+          cmake --build build --target AetherUmbra_Instrument_AU AetherUmbra_Instrument_VST3 AetherUmbra_MusicEffect_AU AetherUmbra_MusicEffect_VST3 -j4 > build_log.txt 2>&1 || {
+            grep -E "error|Error" build_log.txt | head -8 | while IFS= read -r line; do echo "::error::BUILD: $line"; done
+            tail -20 build_log.txt; exit 1; }
+          tail -3 build_log.txt
+
+      - name: Ad-hoc sign (lets Apple silicon load an unsigned build)
+        run: |
+          for b in build/AetherUmbra_*_artefacts/Release/AU/*.component build/AetherUmbra_*_artefacts/Release/VST3/*.vst3; do
+            codesign --force --deep -s - "$b"
+          done
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -R build/AetherUmbra_*_artefacts/Release/AU/*.component dist/
+          cp -R build/AetherUmbra_*_artefacts/Release/VST3/*.vst3 dist/
+          cp THIRD-PARTY-LICENSES.txt LICENSE README.md CHANGELOG.md dist/
+          # Where the source of this exact build is (GPL: a build must come with its source).
+          printf 'AetherUmbra source code\n\nThis build was made from commit\n  %s\nof the public repository\n  https://github.com/%s\n\nThe complete source of this build, including the Oneiroi firmware copy and the build script:\n  https://github.com/%s/tree/%s\n\nLicence: GNU GPL version 3, see LICENSE and THIRD-PARTY-LICENSES.txt.\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_SHA" > dist/SOURCE.txt
+          cat dist/SOURCE.txt
+          # The version inside each plugin must be the one in CMakeLists.txt.
+          WANT=$(sed -n 's/^project(AetherUmbra VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          for B in "AetherUmbra Test Instrument" "AetherUmbra Test Music Effect"; do
+            GOT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "dist/$B.component/Contents/Info.plist")
+            echo "$B: version wanted $WANT, in the plugin $GOT"
+            [ "$WANT" = "$GOT" ] || { echo "::error::PACKAGE version in $B is $GOT, expected $WANT"; exit 1; }
+          done
+          # The two Audio Unit types: instrument (aumu) and music effect (aumf).
+          T1=$(/usr/libexec/PlistBuddy -c "Print :AudioComponents:0:type" "dist/AetherUmbra Test Instrument.component/Contents/Info.plist")
+          T2=$(/usr/libexec/PlistBuddy -c "Print :AudioComponents:0:type" "dist/AetherUmbra Test Music Effect.component/Contents/Info.plist")
+          echo "Audio Unit types: instrument shell $T1, music effect shell $T2"
+          [ "$T1" = "aumu" ] || { echo "::error::PACKAGE the Instrument shell is type $T1, expected aumu"; exit 1; }
+          [ "$T2" = "aumf" ] || { echo "::error::PACKAGE the Music Effect shell is type $T2, expected aumf"; exit 1; }
+          cp third_party/oneiroi-firmware/SOURCE.txt dist/SOURCE-Oneiroi-firmware.txt
+          cp third_party/oneiroi-firmware/AETHERUMBRA-CHANGES.md dist/CHANGES-to-Oneiroi-firmware.md
+          cp third_party/oneiroi-firmware/LICENSE dist/LICENSE-Oneiroi-firmware.txt
+          # Both slices present, and the minimum macOS version baked into each (should say 11.0):
+          for c in dist/*.component dist/*.vst3; do echo "$c: $(lipo -archs "$c"/Contents/MacOS/*)"; done
+          for a in arm64 x86_64; do echo "== $a"; lipo -thin $a "dist/AetherUmbra Test Instrument.component/Contents/MacOS/AetherUmbra Test Instrument" -output /tmp/slice_$a; otool -l /tmp/slice_$a | grep -A4 -E "LC_BUILD_VERSION|LC_VERSION_MIN" | grep -E "minos|version"; done
+          cp tools/install/Install-AetherUmbra.command tools/install/Uninstall-AetherUmbra.command dist/
+          chmod +x dist/Install-AetherUmbra.command dist/Uninstall-AetherUmbra.command
+          cat > dist/INSTALL.txt <<'TXT'
+          EASY INSTALL (two Audio Units for Logic, plus two VST3): double-click Install-AetherUmbra.command in this folder.
+          It asks for your Mac password once. To remove: double-click Uninstall-AetherUmbra.command.
+
+          Then in Logic: Settings > Plug-in Manager > Reset & Rescan Selection.
+          The Instrument is in an instrument slot (Instrument > AU Instruments > particledots > AetherUmbra Test Instrument).
+          The Music Effect is in an Audio FX slot (under Audio Units > particledots); the test checklist says where else to look.
+
+          Manual install instead: copy the .component files to /Library/Audio/Plug-Ins/Components/
+          and the .vst3 files to /Library/Audio/Plug-Ins/VST3/.
+          If macOS says it is from an unidentified developer: Terminal, then
+            xattr -dr com.apple.quarantine <the unzipped folder>
+          TXT
+          [ -x dist/Install-AetherUmbra.command ] || { echo "::error::PACKAGE missing Install-AetherUmbra.command"; exit 1; }
+          [ -x dist/Uninstall-AetherUmbra.command ] || { echo "::error::PACKAGE missing Uninstall-AetherUmbra.command"; exit 1; }
+          # The Mutable Instruments (MIT) notice must be in the download.
+          grep -q "Permission is hereby granted" dist/THIRD-PARTY-LICENSES.txt || { echo "::error::PACKAGE THIRD-PARTY-LICENSES.txt lacks the MIT notice for the Mutable Instruments code"; exit 1; }
+          for f in LICENSE THIRD-PARTY-LICENSES.txt SOURCE-Oneiroi-firmware.txt CHANGES-to-Oneiroi-firmware.md LICENSE-Oneiroi-firmware.txt SOURCE.txt README.md; do [ -s "dist/$f" ] || { echo "::error::PACKAGE missing $f"; exit 1; }; done
+          ls -la dist
+          ditto -c -k --keepParent dist AetherUmbra-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AetherUmbra-macOS
+          path: AetherUmbra-macOS.zip

@@ -1,0 +1,9 @@
+Imported from https://github.com/Befaco/Oneiroi
+Commit: e0480988be551b550a6a052cf777e45da9d32cf6 (Oneiroi firmware 1.2.2, "Release 1.2.2", Nov 6, 2025)
+Imported: 2026-11-11 (Milestone 0, UNMODIFIED: every file in this folder except SOURCE.txt and AETHERUMBRA-CHANGES.md is
+byte-identical to that commit).
+Included: all 35 files of the repository (the engine headers, Oneiroi_1_2_2Patch.hpp, LICENSE, LICENSE_VCV.md, README.md, CHANGELOG).
+Not included, because Befaco's repository does not contain them: the Rebel Technology OpenWare headers the engine
+needs (Patch.h, FloatArray / AudioBuffer, SmoothValue.h, the oscillators and filters, MidiMessage.h and others) and the
+Mutable Instruments code (stmlib, Plaits, Rings) the engine adapts. See AETHERUMBRA-CHANGES.md and
+AetherUmbra-source-findings.md in the project notes.
