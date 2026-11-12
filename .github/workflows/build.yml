@@ -120,15 +120,14 @@ jobs:
           cp tools/install/Install-AetherUmbra.command tools/install/Uninstall-AetherUmbra.command dist/
           chmod +x dist/Install-AetherUmbra.command dist/Uninstall-AetherUmbra.command
           cat > dist/INSTALL.txt <<'TXT'
-          EASY INSTALL (two Audio Units for Logic, plus two VST3): double-click Install-AetherUmbra.command in this folder.
+          EASY INSTALL (the Audio Unit for Logic; the VST3 files in this folder are not installed by the script): double-click Install-AetherUmbra.command in this folder.
           It asks for your Mac password once. To remove: double-click Uninstall-AetherUmbra.command.
 
           Then in Logic: Settings > Plug-in Manager > Reset & Rescan Selection.
           The Instrument is in an instrument slot (Instrument > AU Instruments > particledots > AetherUmbra Test Instrument).
           The Music Effect is in an Audio FX slot (under Audio Units > particledots); the test checklist says where else to look.
 
-          Manual install instead: copy the .component files to /Library/Audio/Plug-Ins/Components/
-          and the .vst3 files to /Library/Audio/Plug-Ins/VST3/.
+          Manual install instead: copy the .component files to /Library/Audio/Plug-Ins/Components/.
           If macOS says it is from an unidentified developer: Terminal, then
             xattr -dr com.apple.quarantine <the unzipped folder>
           TXT

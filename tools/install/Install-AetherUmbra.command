@@ -1,32 +1,29 @@
 #!/bin/bash
-# Installs the AetherUmbra test shells: the Audio Units (for Logic) and the VST3s, for all users.
-# Leave this file in the unzipped plugin folder, beside the .component and .vst3 files, and double-click it.
-# Asks for the Mac password once. It touches only the AetherUmbra files next to this file, the same-named copies in
-# /Library/Audio/Plug-Ins/Components and /Library/Audio/Plug-Ins/VST3, and old same-named copies in ~/Library/Audio/Plug-Ins.
+# Installs AetherUmbra: the Audio Unit (for Logic) only, for all users. (The VST3 is not installed; see the README.)
+# Leave this file in the unzipped plugin folder, beside the .component file(s), and double-click it.
+# Asks for the Mac password once. It touches only the AetherUmbra .component files next to this file, the same-named
+# copies in /Library/Audio/Plug-Ins/Components, and old same-named copies in ~/Library/Audio/Plug-Ins/Components.
 cd "$(dirname "$0")" || exit 1
 SRC="$(pwd)"
 AU_DEST="/Library/Audio/Plug-Ins/Components"
-VST3_DEST="/Library/Audio/Plug-Ins/VST3"
 AU_OLD="$HOME/Library/Audio/Plug-Ins/Components"
-VST3_OLD="$HOME/Library/Audio/Plug-Ins/VST3"
 
 shopt -s nullglob
 AUS=("$SRC"/AetherUmbra*.component)
-VST3S=("$SRC"/AetherUmbra*.vst3)
 
-if [ ${#AUS[@]} -eq 0 ] && [ ${#VST3S[@]} -eq 0 ]; then
-  echo "Cannot find any AetherUmbra .component or .vst3 next to this file."
+if [ ${#AUS[@]} -eq 0 ]; then
+  echo "Cannot find any AetherUmbra .component next to this file."
   echo "Leave this file in the unzipped plugin folder."
   read -n 1 -s -r -p "Press any key to close."
   exit 1
 fi
 
 echo "Found:"
-for C in "${AUS[@]}" "${VST3S[@]}"; do echo "  $(basename "$C")"; done
+for C in "${AUS[@]}"; do echo "  $(basename "$C")"; done
 echo
 xattr -dr com.apple.quarantine "$SRC" 2>/dev/null
 echo "Your Mac password is needed to write to /Library/Audio/Plug-Ins (nothing shows while you type)."
-sudo mkdir -p "$AU_DEST" "$VST3_DEST" || { read -n 1 -s -r -p "Password failed. Press any key to close."; exit 1; }
+sudo mkdir -p "$AU_DEST" || { read -n 1 -s -r -p "Password failed. Press any key to close."; exit 1; }
 
 FAILED=0
 install_one() {  # $1 = bundle, $2 = destination folder, $3 = old per-user folder
@@ -43,12 +40,11 @@ install_one() {  # $1 = bundle, $2 = destination folder, $3 = old per-user folde
   fi
 }
 for C in "${AUS[@]}"; do install_one "$C" "$AU_DEST" "$AU_OLD"; done
-for C in "${VST3S[@]}"; do install_one "$C" "$VST3_DEST" "$VST3_OLD"; done
 killall -9 AudioComponentRegistrar 2>/dev/null
 
 echo
 if [ $FAILED -eq 0 ]; then
-  echo "Done. Open Logic. If the plugins do not appear: Settings > Plug-in Manager > Reset & Rescan Selection."
+  echo "Done. Open Logic. If the plugin does not appear: Settings > Plug-in Manager > Reset & Rescan Selection."
 fi
 echo
 read -n 1 -s -r -p "Press any key to close."

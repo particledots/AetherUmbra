@@ -8,7 +8,7 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 0.1.0, Milestone 0 (two empty test shells). Nothing of the Oneiroi engine runs yet. The firmware source is
+Version 0.1.0, Milestone 0 (two empty test shells), passed in Logic on Nov 11, 2026. Result: the Instrument shell gets MIDI notes and, through Logic's Side Chain menu, audio; the Music Effect shell gets audio but no notes. The Instrument type is kept for Milestone 1. Nothing of the Oneiroi engine runs yet. The firmware source is
 imported unmodified into `third_party/oneiroi-firmware` and is not compiled yet.
 
 The two shells (an AU **Instrument**, type `aumu`, and an AU **Music Effect**, type `aumf`) exist to find out in Logic
@@ -18,11 +18,11 @@ receives: the number of audio input channels with their level, and the last note
 
 ## Install
 1. Download `AetherUmbra-macOS` from the latest run's Artifacts (GitHub, Actions tab) and unzip it.
-2. Double-click `Install-AetherUmbra.command`. It asks for the Mac password once and installs the Audio Units and the
-   VST3s for all users, replacing older copies.
+2. Double-click `Install-AetherUmbra.command`. It asks for the Mac password once and installs the Audio Unit for all
+   users, replacing an older copy. It does not install the VST3 (the zip still contains the VST3 files).
 3. Open Logic. If the plugins are missing: Logic's Settings > Plug-in Manager > Reset & Rescan Selection.
 
-`Uninstall-AetherUmbra.command` removes them again. GitHub deletes a run's download after 90 days. The build is
+`Uninstall-AetherUmbra.command` removes the Audio Units again, and also any AetherUmbra VST3 left from Milestone 0. GitHub deletes a run's download after 90 days. The build is
 universal (Apple silicon and Intel), needs macOS 11 or later, and is not signed with an Apple developer ID: on a Mac
 that downloaded it from the internet, macOS may ask for approval the first time (`INSTALL.txt` in the zip says what to do).
 
@@ -40,4 +40,4 @@ window, notes set the pitch), 2 (finished: Logic's tempo, tail, randomiser, fina
 - AetherUmbra is released under GPL-3.0 (`LICENSE`). A build that is passed on must come with its source.
 
 ## Test history
-- Milestone 0 (automatic plugin test, workspace, Linux): see CHANGELOG. Test in Logic: not done yet.
+- Milestone 0, Nov 11, 2026: automatic plugin test passes (56 checks, both shells: layouts, audio unchanged at 44.1, 48 and 96 kHz, tone follows notes and keeps the last note, no-audio-input case, saving and loading, window text), run natively on Apple silicon and through Rosetta on Intel. Test in Logic 11.2 on the M4 Mac mini (macOS Tahoe), 44.1 kHz: passed, 9 of 9 checks. Both shells install, are listed in the Plug-in Manager and load. Instrument: the test tone follows the notes you play and the pitch stays after release; the window shows the notes; the plug-in header has a Side Chain menu and, with an audio track chosen, the window shows the audio level. Music Effect: the audio of an audio track plays through unchanged, the window shows the level and the tone switch works; on a software instrument track it showed the audio level but received no notes (Bryn's reply, read as "no notes received"). Settings are kept after save and reopen; the uninstall script removes both. Install note from Bryn: the script also installed the VST3s; only the Audio Unit is wanted (fixed after the test, applies from the next build). Intel Mac not tested (not requested).

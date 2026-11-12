@@ -13,4 +13,4 @@
   uninstall scripts. The zip contains licences, `SOURCE.txt` and the change list.
 - Automatic plugin test (`tools/plugin_test`), both shells: layouts, audio unchanged at 44.1, 48 and 96 kHz, tone frequency
   follows the notes, pitch stays after release, no-audio-input case, saving and loading, window text.
-- Result: not tested in Logic yet.
+- Result: passed on Nov 11, 2026 in Logic 11.2 on the M4 Mac mini (macOS Tahoe), 44.1 kHz, all 9 checks. The Instrument shell gets notes and, through the Side Chain menu in its plug-in header, audio. The Music Effect shell gets audio but no notes (tested on an audio track and in the audio FX slot of a software instrument track). Decision: the Instrument type is kept; the Music Effect shell is dropped in Milestone 1. After the test: the install script installs only the Audio Unit (not the VST3); the uninstall script also removes leftover VST3s. Intel Mac not tested (not requested).
