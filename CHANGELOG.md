@@ -4,10 +4,10 @@
 - Result of 1.1.0 on the M4 Mac mini (Bryn): the snaps could not be seen or felt when turning the knobs; he expected the knob itself to click from step to step with a read-out, as in the PhenomeEon plugin. In 1.1.0 the snapping was done only inside the sound engine, so the knob on screen stayed smooth and nothing showed it.
 - Change: with a snap switch on, its knob now clicks from step to step while it is dragged, and the pop-up read-out names the step: Pitch "+3 st", Looper Speed "fwd +3 st (1.21x)" / "rev ..." / "stopped", Resonator Tune "+1 st", Filter Cutoff "D#4  311 Hz", Looper Start and Length "n x 1/16 note" ("x.xx s (no tempo)" and free when Logic gives no tempo). Turning a switch on moves its knob onto the nearest step at once. The engine still snaps the value too, so automation, Mod and saved projects stay on the grid. The grids are in one file, src/engine/AetherSnap.h, used by both the window and the engine. No firmware change.
 - Tests added: plugin test (switch off leaves the knob free; switch on moves Pitch, Speed, Cutoff and Tune onto the step and the read-out names it; Start and Length stay free without a tempo).
-- Result: waiting for the Logic test on the M4 Mac mini (Logic 11.2, 44.1 kHz).
+- Result (Nov 12, 2026): PASSED. Bryn tested on both Macs: the snap knobs click from step to step with the read-out, and the sound is musical on every snap, also after Randomise. Echo Sync, Start/Length snap with a tempo and the Chaos-modulation fix were not reported separately.
 
 ## 1.1.0: fix round on 1.0.0 (Echo Sync and snap switches)
-- Result: the snap switches could not be seen working (see 1.1.1). Echo Sync not reported yet. Automatic tests pass (see below).
+- Result: the snap switches could not be seen working (see 1.1.1). Echo Sync not reported separately. Automatic tests pass (see below).
 - New parameters 56 to 62, at the end of the list (parameter order is unchanged; 1.0.0 had 55): Echo Sync (default off), then the snap switches
   Oscillator Pitch (default on), Looper Speed, Resonator Tune, Filter Cutoff, Looper Start, Looper Length (all off). The window has a small
   on/off button for each in the title bar of its panel (Looper: Speed, Start, Length; Oscillator: Pitch; Filter: Cutoff; Resonator: Tune; Echo: Echo Sync).

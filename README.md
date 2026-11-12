@@ -8,7 +8,7 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 1.1.1 (1.1.0 plus the snap knobs described below): a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; the Logic test of 1.1.1 on the M4 Mac mini is still to be done (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
+Version 1.1.1 (1.1.0 plus the snap knobs described below): a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; 1.1.1 was tested by Bryn in Logic on both Macs and passed (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
 from the same code).
 
 New in 1.1.0 (seven new parameters, 56 to 62, at the end of the list; the window has a small on/off button for each in the title bar of its panel):
