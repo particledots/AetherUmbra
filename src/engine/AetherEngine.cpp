@@ -10,6 +10,7 @@
 #include "owl_runtime.h"
 #include "Oneiroi.h"
 #include "Clock.h"
+#include "AetherSnap.h"
 #include <algorithm>
 #include <cmath>
 
@@ -28,47 +29,11 @@ struct Smooth
     }
 };
 
-// ---- snap helpers: each moves a knob value (0..1) onto the grid of its control -----------------------------------------
-// The Pitch knob: 12 * (value - 0.5) semitones, so whole semitones are 13 positions from -6 to +6.
-float snapPitchKnob (float v)
-{
-    return std::min (1.f, std::max (0.f, 0.5f + std::round ((v - 0.5f) * 12.f) / 12.f));
-}
-
-// The Looper Speed knob: the firmware's CenterMap (Commons.h) turns it into -2 .. +2 (0 at speedZero, 1x at 0.75 for 0.51). Ratios
-// 2^(n/12), up and reversed. The zones the firmware locks at 0x (under 0.1) and 1x / -1x (0.95 to 1.05) are left alone.
-float snapSpeedKnob (float knob, float zero)
-{
-    constexpr float kTop = 0.99f;
-    const float v = knob < zero ? -2.f + 2.f * knob / zero : 2.f * (knob - zero) / (kTop - zero);
-    const float a = std::fabs (v);
-    if (a <= 0.1f || (a >= 0.95f && a <= 1.05f)) return knob;
-    const int n = std::min (12, (int) std::lround (12.f * std::log2 (a)));
-    const float s = std::copysign (std::exp2 ((float) n / 12.f), v);
-    return s < 0.f ? (s + 2.f) * zero / 2.f : zero + s * (kTop - zero) / 2.f;
-}
-
-// The Resonator Tune knob: the main pole moves from -24 semitones to +range (range = 24 at Dissonance 0, 16 at full, an integer as
-// in the firmware's Resonator.h). Whole semitones. (The other two poles keep the offsets of their own.)
-float snapResonatorTuneKnob (float tune, float dissonance)
-{
-    const int range = (int) (24.f - 8.f * std::min (1.f, std::max (0.f, dissonance)));
-    const float span = (float) (range + 24);
-    const int n = std::min (range, std::max (-24, (int) std::lround (-24.f + tune * span)));
-    return (float) (n + 24) / span;
-}
-
-// The Filter Cutoff knob: 10 Hz * 2200^value (10 Hz to 22 kHz, Filter.h). Notes of the equal-tempered scale, A = 440 Hz. The two
-// ends (fully closed and fully open) stay where they are.
-float snapCutoffKnob (float v)
-{
-    if (v <= 0.005f || v >= 0.995f) return v;
-    constexpr float kLn2200 = 7.696213f;       // ln (22000 / 10)
-    const float hz = 10.f * std::exp (v * kLn2200);
-    const int n = (int) std::lround (12.f * std::log2 (hz / 440.f));
-    const float snapped = 440.f * std::exp2 ((float) n / 12.f);
-    return std::min (1.f, std::max (0.f, std::log (snapped / 10.f) / kLn2200));
-}
+// ---- snap helpers: see AetherSnap.h (shared with the plugin window) ----------------------------------------------------------
+float snapPitchKnob (float v) { return snap::pitchKnob (v); }
+float snapSpeedKnob (float knob, float zero) { return snap::speedKnob (knob, zero); }
+float snapResonatorTuneKnob (float tune, float dissonance) { return snap::tuneKnob (tune, dissonance); }
+float snapCutoffKnob (float v) { return snap::cutoffKnob (v); }
 }
 
 struct Engine::Impl

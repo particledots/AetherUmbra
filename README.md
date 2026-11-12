@@ -8,14 +8,14 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 1.1.0: a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; the Logic test of 1.1.0 on the M4 Mac mini is still to be done (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
+Version 1.1.1 (1.1.0 plus the snap knobs described below): a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; the Logic test of 1.1.1 on the M4 Mac mini is still to be done (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
 from the same code).
 
 New in 1.1.0 (seven new parameters, 56 to 62, at the end of the list; the window has a small on/off button for each in the title bar of its panel):
 - **Echo Sync** (default off). Off: the Echo is free, like the module without a clock cable: Density is smooth (10 ms to about 4 s, with pitch-shifting
   sweeps). On: Density moves in the nine tempo steps of Logic's tempo (1/64 to one beat) as in 1.0.0. Modulation and Ambience auto-pan follow Logic's tempo either way.
   Longer sync steps (2 and 4 beats) were not requested and are not there.
-- **Snap switches**, one per knob, on/off. The knob value moves onto a grid; Mod amounts and Randomise keep working (with Looper Start and Length the grid applies to the knob plus Mod):
+- **Snap switches**, one per knob, on/off. With a switch on, the knob itself clicks from step to step while you drag it (a pop-up names the step: "+3 st", "fwd +3 st (1.21x)", "D#4  311 Hz", "4 x 1/16 note"), and the sound engine snaps the value too so automation and Mod stay on the grid. The knob value moves onto a grid; Mod amounts and Randomise keep working (with Looper Start and Length the grid applies to the knob plus Mod):
   - Oscillator Pitch snap (default **on**): whole semitones.
   - Looper Speed snap (off): speeds 2^(n/12), forward and reverse, up to 2x; the firmware's locked zones at 0x, 1x and -1x stay.
   - Resonator Tune snap (off): whole semitones (about -24 to +24; the range shrinks with Dissonance as in the firmware; the other two poles keep their own offsets).

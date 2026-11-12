@@ -584,6 +584,60 @@ int main (int argc, char** argv)
                 auto im = ed->createComponentSnapshot (ed->getLocalBounds());
                 check (im.isValid() && im.getWidth() == w, "window can be drawn at width " + juce::String (w));
             }
+            // ---- the snap switches make the knobs click from step to step and say where they are (1.1.1) ----
+            {
+                auto findButton = [&] (const char* text) -> juce::Button*
+                {
+                    for (auto* c : all) if (auto* b = dynamic_cast<juce::Button*> (c)) if (b->getButtonText() == text) return b;
+                    return nullptr;
+                };
+                auto findSlider = [&] (const char* helpOfParent, const char* probeContains, float probeValue) -> juce::Slider*
+                {
+                    for (auto* c : all)
+                        if (auto* sl = dynamic_cast<juce::Slider*> (c))
+                            if (sl->isRotary() && sl->getParentComponent() != nullptr && sl->getParentComponent()->getHelpText() == helpOfParent
+                                && sl->textFromValueFunction != nullptr && sl->textFromValueFunction ((double) probeValue).contains (probeContains)) return sl;
+                    return nullptr;
+                };
+                auto click = [] (juce::Button* b) { b->setToggleState (! b->getToggleState(), juce::sendNotificationSync); };     // what a mouse click does (triggerClick is asynchronous)
+                struct Row { const char* sw; const char* knobName; const char* param; const char* probe; float probeValue; float start; float expected; const char* what; };
+                const Row rows[] = {
+                    { "Pitch snap",  "Pitch",  "osc_pitch",        "st",       0.58f, 0.53f, 0.5f,          "Oscillator Pitch: 0.53 clicks to the centre (0 semitones)" },
+                    { "Speed snap",  "Speed",  "looper_speed",     "fwd",      0.80f, 0.80f, 0.79526f,      "Looper Speed: 0.80 clicks to +3 semitones forward" },
+                    { "Cutoff snap", "Cutoff", "filter_cutoff",    "Hz",       0.45f, 0.45f, 0.44657f,      "Filter Cutoff: 0.45 clicks to the note D#4" },
+                    { "Tune snap",   "Tune",   "resonator_tune",   "st",       0.53f, 0.53f, 25.f / 48.f,   "Resonator Tune: 0.53 clicks to +1 semitone" },
+                };
+                for (const auto& r : rows)
+                {
+                    auto* b = findButton (r.sw);
+                    auto* sl = findSlider (r.knobName, "", 0.5f);
+                    check (b != nullptr && sl != nullptr, juce::String (r.sw) + ": button and knob are in the window");
+                    if (b == nullptr || sl == nullptr) continue;
+                    // the switch is off: the knob is free
+                    if (b->getToggleState()) click (b);
+                    sl->setValue ((double) r.start, juce::sendNotificationSync);
+                    check (std::abs (val (proc, r.param) - r.start) < 1e-5f, juce::String (r.what) + " (switch off: the knob stays where it is)");
+                    click (b);             // on: the knob moves to the nearest step at once
+                    check (b->getToggleState() && std::abs (val (proc, r.param) - r.expected) < 0.0006f, juce::String (r.what) + " (switch on: value " + juce::String (val (proc, r.param), 4) + ")");
+                    const juce::String text = sl->textFromValueFunction != nullptr ? sl->textFromValueFunction ((double) r.probeValue) : juce::String();
+                    check (text.contains (r.probe), juce::String (r.sw) + ": the read-out names the step (\"" + text + "\")");
+                    // restore the defaults for the tests after this one
+                    click (b); sl->setValue (sl->getDoubleClickReturnValue(), juce::sendNotificationSync);
+                    if (juce::String (r.sw) == "Pitch snap") click (b);
+                }
+                // Start and Length: without a tempo the snap is free, so the knob does not move
+                for (const auto& rr : { std::pair<const char*, const char*> { "Start snap", "looper_start" }, { "Length snap", "looper_length" } })
+                {
+                    auto* b = findButton (rr.first);
+                    check (b != nullptr, juce::String (rr.first) + " is in the window");
+                    if (b == nullptr) continue;
+                    if (b->getToggleState()) click (b);
+                    setParam (proc, rr.second, 0.37f); const float before = val (proc, rr.second);
+                    click (b);
+                    check (std::abs (val (proc, rr.second) - before) < 1e-6f, juce::String (rr.first) + ": without a tempo from Logic the knob stays where it is");
+                    click (b);
+                }
+            }
             ed->setSize (1400, 1000);
             if (argc > 1)
             {

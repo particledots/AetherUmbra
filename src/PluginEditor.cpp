@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "engine/AetherSnap.h"
 #include <cmath>
 
 namespace
@@ -78,6 +79,14 @@ struct AetherEditor::Look : juce::LookAndFeel_V4
 };
 
 // ---- controls -------------------------------------------------------------------------------------------------------
+// A rotary slider whose value can be moved onto a grid while it is dragged (the snap switches, 1.1.1). With no snapper the slider is the
+// ordinary one.
+struct SnapSlider : juce::Slider
+{
+    std::function<double (double)> snapper;
+    double snapValue (double attempted, DragMode) override { return snapper ? snapper (attempted) : attempted; }
+};
+
 struct AetherEditor::Knob : juce::Component
 {
     Knob (AetherProcessor& p, const char* id, const juce::String& name, juce::Colour c, bool big)
@@ -113,7 +122,7 @@ struct AetherEditor::Knob : juce::Component
         label.setBounds (r.removeFromBottom (lh).expanded (getWidth() < 80 ? (int) (getWidth() * 0.3f) : getWidth() / 8, 0));
         slider.setBounds (r);
     }
-    juce::Slider slider; juce::Label label;
+    SnapSlider slider; juce::Label label;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> att;
 };
 
@@ -238,6 +247,29 @@ juce::TextButton& AetherEditor::addSwitch (const char* id, const juce::String& t
 void AetherEditor::place (juce::Component& c, float x, float y, float w, float h) { placed_.push_back ({ &c, x, y, w, h }); }
 void AetherEditor::panel (const juce::String& t, float x, float y, float w, float h, juce::Colour c) { panels_.push_back ({ t, x, y, w, h, c }); }
 
+
+// Ties a snap switch to its knob: while the switch is on the knob clicks from step to step and its read-out names the step; turning the
+// switch on moves the knob onto the nearest step at once. grid() gives the 1/16 note in samples (0 = no tempo) for Start and Length.
+static void bindSnap (juce::Button& sw, SnapSlider& sl, AetherProcessor&, std::function<float (float)> snapTo, std::function<juce::String (float)> text)
+{
+    auto* swp = &sw; auto* slp = &sl;
+    sl.snapper = [swp, snapTo] (double v) { return swp->getToggleState() ? (double) snapTo ((float) v) : v; };
+    sl.textFromValueFunction = [swp, text] (double v)
+    {
+        if (swp->getToggleState()) return text ((float) v);
+        return juce::String (v, 2);
+    };
+    sw.onClick = [swp, slp, snapTo]
+    {
+        if (swp->getToggleState()) slp->setValue ((double) snapTo ((float) slp->getValue()), juce::sendNotificationSync);
+    };
+}
+static float gridSamples (AetherProcessor& p)
+{
+    const double bpm = p.hostBpm();
+    return bpm > 0.0 ? (float) (60.0 * 48000.0 / std::min (300.0, std::max (40.0, bpm)) / 4.0) : 0.f;
+}
+
 AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), proc_ (p), look_ (new Look)
 {
     setLookAndFeel (look_.get());
@@ -264,22 +296,22 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     // Looper (three columns centred at x 110, 270, 430; the small MOD knobs are 74 wide)
     panel ("LOOPER", 20, 80, 500, 306, kLooper);
-    addSwitch ("snap_looper_speed", "Speed snap", 132, 84, 112, kLooper);
-    addSwitch ("snap_looper_start", "Start snap", 250, 84, 106, kLooper);
-    addSwitch ("snap_looper_length", "Length snap", 362, 84, 120, kLooper);
-    addKnob ("looper_speed", "Speed", 52, 114, 116, true);
+    auto& swSpeed = addSwitch ("snap_looper_speed", "Speed snap", 132, 84, 112, kLooper);
+    auto& swStart = addSwitch ("snap_looper_start", "Start snap", 250, 84, 106, kLooper);
+    auto& swLength = addSwitch ("snap_looper_length", "Length snap", 362, 84, 120, kLooper);
+    auto& knSpeed = addKnob ("looper_speed", "Speed", 52, 114, 116, true);
     addKnob ("looper_speed_mod", "MOD", 73, 266, 74);
-    addKnob ("looper_start", "Start", 218, 118, 104, true);
+    auto& knStart = addKnob ("looper_start", "Start", 218, 118, 104, true);
     addKnob ("looper_start_mod", "MOD", 184, 266, 74);
     addKnob ("looper_sos", "Sound on sound", 272, 266, 74);
-    addKnob ("looper_length", "Length", 378, 118, 104, true);
+    auto& knLength = addKnob ("looper_length", "Length", 378, 118, 104, true);
     addKnob ("looper_length_mod", "MOD", 358, 266, 74);
     addKnob ("looper_filter", "Filter", 438, 266, 74);
 
     // Oscillator
     panel ("OSCILLATOR", 20, 396, 500, 306, kOsc);
-    addSwitch ("snap_osc_pitch", "Pitch snap", 170, 400, 112, kOsc);
-    addKnob ("osc_pitch", "Pitch", 52, 430, 116, true);
+    auto& swPitch = addSwitch ("snap_osc_pitch", "Pitch snap", 170, 400, 112, kOsc);
+    auto& knPitch = addKnob ("osc_pitch", "Pitch", 52, 430, 116, true);
     addKnob ("osc_pitch_mod", "MOD", 32, 582, 74);
     addKnob ("osc_octave", "Octave", 114, 582, 74);
     addKnob ("osc_detune", "Detune", 218, 434, 104, true);
@@ -295,8 +327,8 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
 
     // Filter, Resonator, Echo, Ambience (columns centred 62, 181, 300 inside each 365-wide panel)
     panel ("FILTER", 665, 80, 355, 306, kFilter);
-    addSwitch ("snap_filter_cutoff", "Cutoff snap", 775, 84, 124, kFilter);
-    addKnob ("filter_cutoff", "Cutoff", 679, 108, 88, true);
+    auto& swCutoff = addSwitch ("snap_filter_cutoff", "Cutoff snap", 775, 84, 124, kFilter);
+    auto& knCutoff = addKnob ("filter_cutoff", "Cutoff", 679, 108, 88, true);
     addKnob ("filter_cutoff_mod", "MOD", 686, 226, 74);
     addKnob ("filter_resonance", "Resonance", 798, 108, 88, true);
     addKnob ("filter_resonance_mod", "MOD", 805, 226, 74);
@@ -305,12 +337,23 @@ AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), pro
     addSegments ("filter_position", "Position", { "I", "II", "III", "IV" }, kFilter, 876, 328, 134, 54);
 
     panel ("RESONATOR", 1030, 80, 355, 306, kReso);
-    addSwitch ("snap_resonator_tune", "Tune snap", 1180, 84, 112, kReso);
-    addKnob ("resonator_tune", "Tune", 1044, 108, 88, true);
+    auto& swTune = addSwitch ("snap_resonator_tune", "Tune snap", 1180, 84, 112, kReso);
+    auto& knTune = addKnob ("resonator_tune", "Tune", 1044, 108, 88, true);
     addKnob ("resonator_tune_mod", "MOD", 1051, 226, 74);
     addKnob ("resonator_feedback", "Feedback", 1163, 108, 88, true);
     addKnob ("resonator_feedback_mod", "MOD", 1170, 226, 74);
     addKnob ("resonator_dissonance", "Dissonance", 1288, 114, 76, true);
+
+    // The snap switches make their knobs click from step to step (1.1.1); the engine snaps the value as well (automation, Mod, saved projects).
+    bindSnap (swPitch, knPitch.slider, proc_, [] (float v) { return aether::snap::pitchKnob (v); }, [] (float v) { return juce::String (aether::snap::pitchText (v)); });
+    bindSnap (swSpeed, knSpeed.slider, proc_, [] (float v) { return aether::snap::speedKnob (v); }, [] (float v) { return juce::String (aether::snap::speedText (v)); });
+    bindSnap (swCutoff, knCutoff.slider, proc_, [] (float v) { return aether::snap::cutoffKnob (v); }, [] (float v) { return juce::String (aether::snap::cutoffText (v)); });
+    auto dissonance = [this] { return proc_.apvts.getRawParameterValue ("resonator_dissonance")->load(); };
+    bindSnap (swTune, knTune.slider, proc_, [dissonance] (float v) { return aether::snap::tuneKnob (v, dissonance()); }, [dissonance] (float v) { return juce::String (aether::snap::tuneText (v, dissonance())); });
+    bindSnap (swStart, knStart.slider, proc_, [this] (float v) { return aether::snap::startKnob (v, gridSamples (proc_)); },
+              [this] (float v) { return juce::String (aether::snap::sixteenthsText (aether::snap::startSamples (aether::snap::startKnob (v, gridSamples (proc_))), gridSamples (proc_))); });
+    bindSnap (swLength, knLength.slider, proc_, [this] (float v) { return aether::snap::lengthKnob (v, gridSamples (proc_)); },
+              [this] (float v) { return juce::String (aether::snap::sixteenthsText (aether::snap::lengthSamples (aether::snap::lengthKnob (v, gridSamples (proc_))), gridSamples (proc_))); });
 
     panel ("ECHO", 665, 396, 355, 306, kEcho);
     addSwitch ("echo_sync", "Echo Sync", 775, 400, 124, kEcho);
