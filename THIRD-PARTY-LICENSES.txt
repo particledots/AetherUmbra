@@ -117,6 +117,11 @@ AetherUmbra third-party components
      HarfBuzz: Old MIT; SheenBidi: Apache License 2.0
    The licence text of each is in the JUCE source: https://github.com/juce-framework/JUCE/tree/8.0.6
 
+2a. Fonts (built into the window since 1.1.2, copied from the Anamnesis plugin): Space Grotesk (Florian Karsten) and
+   Marcellus (Astigmatic), both under the SIL Open Font License 1.1. The licence texts are in assets/fonts
+   (OFL-SpaceGrotesk.txt, OFL-Marcellus.txt) and the font files are in the same folder. The OFL allows bundling them with
+   software (also GPL software) as long as the licence text goes with them and the fonts are not sold on their own.
+
 3. Sharing. Personal use on your own Macs needs nothing more. Whoever passes a build on must pass on LICENSE, this
    file and the notices with it and offer the complete source (SOURCE.txt in the download names the exact commit).
    Not legal advice. The name "AetherUmbra" does not contain "Oneiroi" or "Befaco"; they appear only in the truthful

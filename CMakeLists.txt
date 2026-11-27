@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(AetherUmbra VERSION 1.1.1 LANGUAGES C CXX)
+project(AetherUmbra VERSION 1.1.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -54,6 +54,16 @@ if(AETHER_BUILD_PLUGIN)
     GIT_SHALLOW TRUE)
   FetchContent_MakeAvailable(JUCE)
 
+  # The window's fonts (Space Grotesk, Marcellus; SIL OFL, licences in assets/fonts), built into the plugin so it looks and
+  # measures the same on every Mac and in the test.
+  juce_add_binary_data(AetherFonts
+    HEADER_NAME AetherFontData.h
+    NAMESPACE   AetherFontData
+    SOURCES
+      assets/fonts/SpaceGrotesk-Regular.ttf
+      assets/fonts/SpaceGrotesk-Medium.ttf
+      assets/fonts/Marcellus-Regular.ttf)
+
   # Plugin formats: AU (macOS only, the priority) + VST3.
   set(FORMATS VST3)
   if(APPLE)
@@ -90,6 +100,7 @@ if(AETHER_BUILD_PLUGIN)
 
   target_link_libraries(AetherUmbra PRIVATE
     aether_engine
+    AetherFonts
     juce::juce_audio_utils
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
@@ -110,6 +121,7 @@ if(AETHER_BUILD_PLUGIN)
       AETHER_VERSION_STRING="${PROJECT_VERSION}")
     target_link_libraries(AetherUmbra_PluginTest PRIVATE
       aether_engine
+      AetherFonts
       juce::juce_audio_utils
       juce::juce_recommended_config_flags)
   endif()

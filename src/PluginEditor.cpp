@@ -1,167 +1,283 @@
 #include "PluginEditor.h"
 #include "engine/AetherSnap.h"
+#include <AetherFontData.h>
 #include <cmath>
 
+using namespace AetherStyle;
+
+// ------------------------------------------------------------------------------------------------ fonts
 namespace
 {
-const juce::Colour kBg { 0xff0c0e12 }, kPanel { 0xff1a1d24 }, kInk { 0xffeceef2 }, kDim { 0xff8e949e }, kTrack { 0xff2a2f38 };
-const juce::Colour kLooper { 0xfff0b23c }, kOsc { 0xff5ec8f2 }, kMod { 0xffb58cff }, kFilter { 0xff6fdc8c },
-                   kReso { 0xfff07a9c }, kEcho { 0xffff9a5c }, kAmb { 0xff7aa2ff }, kRandom { 0xffe85d5d }, kMix { 0xffc8ccd4 };
+    juce::Typeface::Ptr load (const char* data, int size) { return juce::Typeface::createSystemTypefaceFor (data, (size_t) size); }
+    struct Faces
+    {
+        juce::Typeface::Ptr regular = load (AetherFontData::SpaceGroteskRegular_ttf, AetherFontData::SpaceGroteskRegular_ttfSize);
+        juce::Typeface::Ptr medium  = load (AetherFontData::SpaceGroteskMedium_ttf, AetherFontData::SpaceGroteskMedium_ttfSize);
+        juce::Typeface::Ptr title   = load (AetherFontData::MarcellusRegular_ttf, AetherFontData::MarcellusRegular_ttfSize);
+    };
+    Faces& faces() { static Faces f; return f; }
 
-juce::String noteName (int n)
-{
-    static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-    return juce::String (names[n % 12]) + juce::String (n / 12 - 1);
+    juce::Font make (juce::Typeface::Ptr face, float size, float spacing)
+    {
+        // if a font could not be read for any reason, fall back to the system font rather than draw nothing
+        juce::FontOptions o = face != nullptr ? juce::FontOptions (face) : juce::FontOptions();
+        juce::Font f (o.withPointHeight (size));
+        if (spacing > 0.0f) f = f.withExtraKerningFactor (spacing / f.getHeight());
+        return f;
+    }
 }
-juce::Font fontOf (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
+juce::Font AetherStyle::font (float size, bool medium, float spacing) { return make (medium ? faces().medium : faces().regular, size, spacing); }
+juce::Font AetherStyle::titleFont() { return make (faces().title, titleSize, titleSpacing); }
+
+// ------------------------------------------------------------------------------------------------ geometry (panel units)
+namespace
+{
+    constexpr float kRow1 = 96.f, kRow2 = 430.f, kRowH = 300.f;
+    constexpr float kLoopX = 20.f, kLoopW = 472.f, kModX = 516.f, kModW = 150.f;
+    constexpr float kFiltX = 690.f, kResX = 1047.f, kSecW = 333.f;
+    constexpr float kBotY = 750.f, kBotH = 222.f;
+    constexpr float kBotX[5] = { 20.f, 228.f, 548.f, 768.f, 1148.f }, kBotW[5] = { 184.f, 296.f, 196.f, 356.f, 232.f };
+    constexpr float kBus = kRow1 + kRowH + 11.f, kLane = kRow1 + kRowH + 23.f;       // the two lanes in the gap between the rows
+    constexpr float kCol[3] = { kLoopX + 86.f, kLoopX + 236.f, kLoopX + 386.f };      // the big-knob columns of Looper / Oscillator
+
+    struct FrameDef { float x, y, w, h; const char* title; bool centred; };
+    const FrameDef kFrames[] = {
+        { kLoopX, kRow1, kLoopW, kRowH, "LOOPER", false },        { kLoopX, kRow2, kLoopW, kRowH, "OSCILLATOR", false },
+        { kModX, kRow1, kModW, kRow2 + kRowH - kRow1, "MODULATION", true },
+        { kFiltX, kRow1, kSecW, kRowH, "FILTER", false },         { kResX, kRow1, kSecW, kRowH, "RESONATOR", false },
+        { kFiltX, kRow2, kSecW, kRowH, "ECHO", false },           { kResX, kRow2, kSecW, kRowH, "AMBIENCE", false },
+        { kBotX[0], kBotY, kBotW[0], kBotH, "LOOPER RECORD", false }, { kBotX[1], kBotY, kBotW[1], kBotH, "SOURCE LEVELS", false },
+        { kBotX[2], kBotY, kBotW[2], kBotH, "RANDOM", false },    { kBotX[3], kBotY, kBotW[3], kBotH, "EFFECT LEVELS", false },
+        { kBotX[4], kBotY, kBotW[4], kBotH, "AUDIO IN", false } };
+
+    const juce::Font& capsFont() { static const juce::Font f = font (15.0f, false, 2.2f); return f; }
+
+    juce::Path run (std::initializer_list<juce::Point<float>> pts)
+    {
+        juce::Path p;
+        std::vector<juce::Point<float>> v (pts);
+        p.startNewSubPath (v[0]);
+        for (size_t i = 1; i < v.size(); ++i) p.lineTo (v[i]);
+        return p;
+    }
+    void stroke (juce::Graphics& g, const juce::Path& p, bool dotted)
+    {
+        g.setColour (gold());
+        if (! dotted) { g.strokePath (p, juce::PathStrokeType (1.2f)); return; }
+        juce::Path d;
+        const float dash[2] = { 2.2f, 3.0f };
+        juce::PathStrokeType (1.2f).createDashedStroke (d, p, dash, 2);
+        g.fillPath (d);
+    }
+    void node (juce::Graphics& g, float x, float y)
+    {
+        g.setColour (panel());
+        g.fillEllipse (x - 2.8f, y - 2.8f, 5.6f, 5.6f);
+        g.setColour (gold());
+        g.drawEllipse (x - 2.8f, y - 2.8f, 5.6f, 5.6f, 1.1f);
+    }
+
+    juce::String noteName (int n)
+    {
+        static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        return juce::String (names[n % 12]) + juce::String (n / 12 - 1);
+    }
+
+    juce::StringArray wrapText (const juce::String& s, float size, float spacing, float room)
+    {
+        juce::StringArray words, lines;
+        words.addTokens (s, " ", "");
+        juce::String line;
+        for (const auto& w : words)
+        {
+            const juce::String t = line.isEmpty() ? w : line + " " + w;
+            if (line.isNotEmpty() && textWidth (t, size, false, spacing) > room) { lines.add (line); line = w; }
+            else line = t;
+        }
+        if (line.isNotEmpty()) lines.add (line);
+        return lines;
+    }
+
+    // live areas (panel units)
+    const juce::Rectangle<int> kTempoArea { 0, 48, 330, 26 }, kNoteArea { 860, 48, 440, 26 }, kBarArea { 530, 644, 122, 34 }, kAudioArea { 1160, 776, 212, 186 };
+    constexpr float kAudioRoom = 196.f;
 }
 
-// ---- look -----------------------------------------------------------------------------------------------------------
-struct AetherEditor::Look : juce::LookAndFeel_V4
-{
-    Look()
-    {
-        setColour (juce::TextButton::buttonColourId, kTrack);
-        setColour (juce::TextButton::textColourOffId, kInk);
-        setColour (juce::TextButton::textColourOnId, juce::Colours::black);
-        setColour (juce::Label::textColourId, kInk);
-    }
-    void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float a0, float a1, juce::Slider& s) override
-    {
-        const auto b = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (juce::jmin (w, h) * 0.08f);
-        const float r = juce::jmin (b.getWidth(), b.getHeight()) * 0.5f;
-        const auto c = b.getCentre();
-        const auto colour = s.findColour (juce::Slider::rotarySliderFillColourId);
-        const float thick = juce::jmax (2.f, r * 0.14f);
-        const bool bipolar = (bool) s.getProperties().getWithDefault ("bipolar", false);   // centre = off: the coloured arc starts at the top
-        const float ang = a0 + pos * (a1 - a0);
-        const float from = bipolar ? (a0 + a1) * 0.5f : a0;
-        juce::Path track, arc;
-        track.addCentredArc (c.x, c.y, r - thick * 0.5f, r - thick * 0.5f, 0.f, a0, a1, true);
-        g.setColour (kTrack); g.strokePath (track, juce::PathStrokeType (thick));
-        if (std::abs (ang - from) > 0.01f)
-        {
-            arc.addCentredArc (c.x, c.y, r - thick * 0.5f, r - thick * 0.5f, 0.f, juce::jmin (from, ang), juce::jmax (from, ang), true);
-            g.setColour (colour.withAlpha (0.28f)); g.strokePath (arc, juce::PathStrokeType (thick * 1.7f));    // soft glow under the arc
-            g.setColour (colour); g.strokePath (arc, juce::PathStrokeType (thick));
-        }
-        if (bipolar)   // small tick at the centre position
-        {
-            const float mid = (a0 + a1) * 0.5f, r0 = r - thick * 1.05f, r1 = r + thick * 0.05f;
-            g.setColour (kDim); g.drawLine (c.x + std::sin (mid) * r0, c.y - std::cos (mid) * r0, c.x + std::sin (mid) * r1, c.y - std::cos (mid) * r1, juce::jmax (1.f, thick * 0.22f));
-        }
-        const float capR = r * 0.68f;
-        g.setGradientFill (juce::ColourGradient (juce::Colour (0xff343a45), c.x, c.y - capR, juce::Colour (0xff1b1f26), c.x, c.y + capR, false));
-        g.fillEllipse (c.x - capR, c.y - capR, capR * 2.f, capR * 2.f);
-        g.setColour (juce::Colour (0x22ffffff)); g.drawEllipse (c.x - capR, c.y - capR, capR * 2.f, capR * 2.f, juce::jmax (1.f, r * 0.02f));
-        juce::Path p; p.addRoundedRectangle (-r * 0.045f, -r * 0.62f, r * 0.09f, r * 0.34f, r * 0.03f);
-        g.setColour (kInk); g.fillPath (p, juce::AffineTransform::rotation (ang).translated (c.x, c.y));
-    }
-    void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider& s) override
-    {
-        const float cx = x + w * 0.5f, trackW = juce::jmax (4.f, w * 0.12f), top = y + h * 0.03f, bot = y + h * 0.97f;
-        g.setColour (kTrack); g.fillRoundedRectangle (cx - trackW * 0.5f, top, trackW, bot - top, trackW * 0.5f);
-        g.setColour (s.findColour (juce::Slider::trackColourId)); g.fillRoundedRectangle (cx - trackW * 0.5f, pos, trackW, bot - pos, trackW * 0.5f);
-        const float hw = w * 0.62f, hh = juce::jmax (8.f, h * 0.07f);
-        g.setColour (juce::Colour (0xff2e333c)); g.fillRoundedRectangle (cx - hw * 0.5f, pos - hh * 0.5f, hw, hh, hh * 0.25f);
-        g.setColour (kInk); g.fillRect (cx - hw * 0.5f + 2.f, pos - 1.f, hw - 4.f, 2.f);
-    }
-    void drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool, bool) override
-    {
-        auto r = b.getLocalBounds().toFloat().reduced (1.f);
-        const bool on = b.getToggleState();
-        g.setColour (on ? kRandom : kTrack); g.fillRoundedRectangle (r, r.getHeight() * 0.18f);
-        g.setColour (on ? juce::Colours::white : kInk);
-        g.setFont (fontOf (r.getHeight() * 0.3f, true));
-        g.drawText (on ? "RECORDING" : b.getButtonText(), r.toNearestInt(), juce::Justification::centred);
-    }
-    juce::Font getTextButtonFont (juce::TextButton& b, int h) override { return fontOf (juce::jmin ((float) h * 0.5f, (float) b.getWidth() * (b.getButtonText().length() > 3 ? 0.34f : 0.46f)), true); }
-};
-
-// ---- controls -------------------------------------------------------------------------------------------------------
-// A rotary slider whose value can be moved onto a grid while it is dragged (the snap switches, 1.1.1). With no snapper the slider is the
-// ordinary one.
+// ------------------------------------------------------------------------------------------------ controls
+// A rotary slider whose value can be moved onto a grid while it is dragged (the snap switches, 1.1.1).
 struct SnapSlider : juce::Slider
 {
     std::function<double (double)> snapper;
     double snapValue (double attempted, DragMode) override { return snapper ? snapper (attempted) : attempted; }
 };
 
+float AetherEditor::needWidth (const juce::Button& b)
+{
+    const juce::String style = b.getProperties()["style"].toString();
+    const juce::String t = b.getButtonText().toUpperCase();
+    if (style == "option") return 17.0f + textWidth (t, optionSize, false, optionSpacing) + 4.0f;
+    if (style == "pill")   return textWidth (t, cellSize, false, cellSpacing) + 13.0f + 2.0f;
+    if (style == "list")   return 20.0f + textWidth (t, cellSize, false, cellSpacing);
+    if (style == "round")  return 20.0f + roundR + roundGap + textWidth (t, optionSize, false, roundSpacing) + 4.0f;
+    if (style == "action") return textWidth (t, optionSize, false, actionSpacing) + 16.0f;
+    return 0.0f;
+}
+
+struct AetherEditor::Look : juce::LookAndFeel_V4
+{
+    Look()
+    {
+        setColour (juce::BubbleComponent::backgroundColourId, menu());
+        setColour (juce::BubbleComponent::outlineColourId, gold());
+        setColour (juce::TooltipWindow::textColourId, text());
+        setColour (juce::Label::textColourId, text());
+    }
+    juce::Font getSliderPopupFont (juce::Slider&) override { return font (14.0f); }
+    int getSliderThumbRadius (juce::Slider&) override { return 8; }
+
+    void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override
+    {
+        const auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+        const float u = juce::jmin (r.getWidth(), r.getHeight()) / 62.0f;     // one unit of the knob
+        const auto c = r.getCentre();
+        auto disc = [&] (float radius, juce::Colour fill, juce::Colour line, float lw)
+        {
+            g.setColour (fill);  g.fillEllipse (c.x - radius, c.y - radius, radius * 2.0f, radius * 2.0f);
+            g.setColour (line);  g.drawEllipse (c.x - radius, c.y - radius, radius * 2.0f, radius * 2.0f, lw);
+        };
+        disc (22.0f * u, skirt(), skirtLine(), 1.2f * u);
+        disc (16.0f * u, cap(), capLine(), 0.8f * u);
+        const float a = start + pos * (end - start);
+        const float sx = std::sin (a), sy = -std::cos (a);
+        juce::Path p;
+        p.startNewSubPath (c.x + 5.0f * u * sx, c.y + 5.0f * u * sy);
+        p.lineTo (c.x + 15.0f * u * sx, c.y + 15.0f * u * sy);
+        g.setColour (pointer());
+        g.strokePath (p, juce::PathStrokeType (2.0f * u, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    // a fader: a gold hairline with end ticks and a cream cap
+    void drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider::SliderStyle, juce::Slider&) override
+    {
+        const float cx = (float) x + (float) w * 0.5f, top = (float) y, bot = (float) (y + h);   // (LookAndFeel_V4 already leaves the thumb radius at both ends)
+        g.setColour (gold());
+        g.fillRect (cx - 0.65f, top, 1.3f, bot - top);
+        g.fillRect (cx - 7.0f, top - 0.65f, 14.0f, 1.3f);
+        g.fillRect (cx - 7.0f, bot - 0.65f, 14.0f, 1.3f);
+        g.setColour (skirt());      g.fillRoundedRectangle (cx - 15.0f, pos - 8.0f, 30.0f, 16.0f, 4.0f);
+        g.setColour (skirtLine());  g.drawRoundedRectangle (cx - 15.0f, pos - 8.0f, 30.0f, 16.0f, 4.0f, 1.2f);
+        g.setColour (cap());        g.fillRoundedRectangle (cx - 12.0f, pos - 5.0f, 24.0f, 10.0f, 3.0f);
+        g.setColour (capLine());    g.drawRoundedRectangle (cx - 12.0f, pos - 5.0f, 24.0f, 10.0f, 3.0f, 0.9f);
+        g.setColour (pointer());    g.fillRoundedRectangle (cx - 0.9f, pos - 4.0f, 1.8f, 8.0f, 0.9f);
+    }
+
+    static void roundButton (juce::Graphics& g, juce::Rectangle<float> r, const juce::String& label, bool lit)
+    {
+        const float cx = r.getX() + 20.0f, cy = r.getCentreY();
+        if (lit)
+        {
+            g.setColour (lamp().withAlpha (0.18f));  g.fillEllipse (cx - 21.0f, cy - 21.0f, 42.0f, 42.0f);
+            g.setColour (lampFill());                g.fillEllipse (cx - roundR, cy - roundR, roundR * 2.0f, roundR * 2.0f);
+            g.setColour (lamp());                    g.drawEllipse (cx - roundR, cy - roundR, roundR * 2.0f, roundR * 2.0f, 1.5f);
+        }
+        else
+        {
+            g.setColour (skirt());  g.fillEllipse (cx - roundR, cy - roundR, roundR * 2.0f, roundR * 2.0f);
+            g.setColour (gold());   g.drawEllipse (cx - roundR, cy - roundR, roundR * 2.0f, roundR * 2.0f, 1.2f);
+        }
+        textIn (g, label, font (optionSize, false, roundSpacing), cx + roundR + roundGap, cy + 5.0f, text(), juce::Justification::centredLeft);
+    }
+
+    void drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool, bool) override
+    {
+        LogPause pause;
+        roundButton (g, b.getLocalBounds().toFloat(), b.getButtonText().toUpperCase(), b.getToggleState());
+    }
+    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override {}
+    void drawButtonText (juce::Graphics& g, juce::TextButton& b, bool, bool down) override
+    {
+        LogPause pause;
+        const juce::String style = b.getProperties()["style"].toString();
+        const juce::String t = b.getButtonText().toUpperCase();
+        const auto r = b.getLocalBounds().toFloat();
+        const float cy = r.getCentreY();
+        const bool on = b.getToggleState();
+        if (style == "option")
+        {
+            drawLamp (g, r.getX() + 8.0f, cy, on, 3.3f);
+            textIn (g, t, font (optionSize, false, optionSpacing), r.getX() + 18.0f, cy + 5.0f, on ? text() : soft(), juce::Justification::centredLeft);
+        }
+        else if (style == "list")
+        {
+            drawLamp (g, r.getX() + 8.0f, cy, on, 3.3f);
+            textIn (g, t, font (cellSize, false, cellSpacing), r.getX() + 20.0f, cy + 5.0f, on ? text() : muted(), juce::Justification::centredLeft);
+        }
+        else if (style == "pill")      // one cell of a pill: the chosen one has a lamp in front of its text
+        {
+            const auto f = font (cellSize, false, cellSpacing);
+            const float cx = r.getCentreX();
+            if (on)
+            {
+                const float gx = cx - (widthOf (t, f) + 13.0f) * 0.5f;
+                drawLamp (g, gx + 3.0f, cy, true, 2.6f);
+                textIn (g, t, f, gx + 13.0f, cy + 5.0f, text(), juce::Justification::centredLeft);
+            }
+            else
+                textIn (g, t, f, cx, cy + 5.0f, muted(), juce::Justification::centred);
+        }
+        else if (style == "round")
+            roundButton (g, r, t, down);
+        else if (style == "action")
+        {
+            const auto rr = r.reduced (0.5f);
+            if (down) { g.setColour (lampFill()); g.fillRoundedRectangle (rr, rr.getHeight() * 0.5f); }
+            g.setColour (down ? lamp() : gold());
+            g.drawRoundedRectangle (rr, rr.getHeight() * 0.5f, 1.1f);
+            textIn (g, t, font (optionSize, false, actionSpacing), r.getCentreX(), cy + 5.0f, text(), juce::Justification::centred);
+        }
+    }
+};
+
 struct AetherEditor::Knob : juce::Component
 {
-    Knob (AetherProcessor& p, const char* id, const juce::String& name, juce::Colour c, bool big)
+    Knob (AetherProcessor& p, const char* id, const juce::String& name)
     {
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.2f, juce::MathConstants<float>::pi * 2.8f, true);
-        slider.setColour (juce::Slider::rotarySliderFillColourId, c);
+        slider.setRotaryParameters (juce::degreesToRadians (-135.0f), juce::degreesToRadians (135.0f), true);
         slider.setPopupDisplayEnabled (true, true, nullptr);
         slider.setDoubleClickReturnValue (true, 0.0);
-        // controls whose middle position means "off" or "no change" get an arc that starts at the middle
-        const juce::String pid (id);
-        if (pid == "osc_pitch" || pid == "osc_unison" || pid == "looper_filter" || pid == "echo_filter") slider.getProperties().set ("bipolar", true);
         addAndMakeVisible (slider);
-        label.setText (name, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, big ? kInk : juce::Colour (0xffc3c8d0));
-        label.setInterceptsMouseClicks (false, false);
-        label.setMinimumHorizontalScale (0.6f);
-        label.setPaintingIsUnclipped (true);
-        setPaintingIsUnclipped (true);
-        addAndMakeVisible (label);
         att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id, slider);
         // double click = back to the default value of the parameter
         if (auto* prm = p.apvts.getParameter (id)) slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
         setHelpText (name);
     }
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        const int lh = juce::jmax (10, getHeight() - getWidth());     // the knob is square, the label gets what is below it
-        label.setFont (fontOf ((float) lh * 0.78f, true));
-        label.setBounds (r.removeFromBottom (lh).expanded (getWidth() < 80 ? (int) (getWidth() * 0.3f) : getWidth() / 8, 0));
-        slider.setBounds (r);
-    }
-    SnapSlider slider; juce::Label label;
+    void resized() override { slider.setBounds (getLocalBounds()); }
+    SnapSlider slider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> att;
 };
 
 struct AetherEditor::Fader : juce::Component
 {
-    Fader (AetherProcessor& p, const char* id, const juce::String& name, juce::Colour c)
+    Fader (AetherProcessor& p, const char* id)
     {
         slider.setSliderStyle (juce::Slider::LinearVertical);
         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setColour (juce::Slider::trackColourId, c);
         slider.setPopupDisplayEnabled (true, true, nullptr);
         addAndMakeVisible (slider);
-        label.setText (name, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, kInk);
-        label.setMinimumHorizontalScale (0.6f);
-        label.setPaintingIsUnclipped (true);
-        setPaintingIsUnclipped (true);
-        addAndMakeVisible (label);
         att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.apvts, id, slider);
         if (auto* prm = p.apvts.getParameter (id)) slider.setDoubleClickReturnValue (true, prm->convertFrom0to1 (prm->getDefaultValue()));
     }
-    void resized() override
-    {
-        auto r = getLocalBounds();
-        const int lh = juce::jmax (10, (int) (getWidth() * 0.34f));
-        label.setFont (fontOf ((float) lh * 0.7f, true));
-        label.setBounds (r.removeFromBottom (lh).expanded (juce::jmax (6, getWidth() / 6), 0));
-        slider.setBounds (r);
-    }
-    juce::Slider slider; juce::Label label;
+    void resized() override { slider.setBounds (getLocalBounds()); }
+    juce::Slider slider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> att;
 };
 
-// A row (or column) of buttons of which exactly one is on: for choice parameters and on/off switches.
+// A pill (one row of choices in a gold outline) or a list (choices stacked, a lamp each) bound to a choice parameter.
 struct AetherEditor::Segments : juce::Component
 {
-    Segments (AetherProcessor& p, const char* id, const juce::String& cap, const juce::StringArray& names, juce::Colour c, bool vert)
-        : caption (cap), vertical (vert)
+    Segments (AetherProcessor& p, const char* id, const juce::StringArray& names, Kind k) : kind (k)
     {
         static int nextGroup = 4000;
         const int group = nextGroup++;
@@ -171,7 +287,7 @@ struct AetherEditor::Segments : juce::Component
             auto* b = buttons.add (new juce::TextButton (names[i]));
             b->setClickingTogglesState (true);
             b->setRadioGroupId (group);
-            b->setColour (juce::TextButton::buttonOnColourId, c);
+            b->getProperties().set ("style", k == Kind::Pill ? "pill" : "list");
             b->onClick = [this, i] { if (att) att->setValueAsCompleteGesture ((float) i); };
             addAndMakeVisible (b);
         }
@@ -184,73 +300,79 @@ struct AetherEditor::Segments : juce::Component
     }
     void paint (juce::Graphics& g) override
     {
-        if (caption.isEmpty()) return;
-        g.setColour (juce::Colour (0xffc3c8d0)); g.setFont (fontOf (captionH() * 0.84f));
-        g.drawFittedText (caption, getLocalBounds().removeFromTop ((int) captionH()), juce::Justification::centredLeft, 1, 0.7f);
+        if (kind != Kind::Pill) return;
+        const auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (gold());
+        g.drawRoundedRectangle (r, r.getHeight() * 0.5f, 1.1f);
+        const float cw = r.getWidth() / (float) buttons.size();
+        for (int i = 1; i < buttons.size(); ++i) g.fillRect (r.getX() + cw * (float) i - 0.5f, r.getY() + 1.0f, 1.0f, r.getHeight() - 2.0f);
     }
-    float captionH() const { return caption.isEmpty() ? 0.f : juce::jmax (10.f, (float) getHeight() * (vertical ? 0.16f : 0.34f)); }
     void resized() override
     {
-        auto r = getLocalBounds(); r.removeFromTop ((int) captionH());
+        auto r = getLocalBounds();
         const int n = buttons.size();
         for (int i = 0; i < n; ++i)
-            buttons[i]->setBounds (vertical ? r.removeFromTop (r.getHeight() / (n - i)).reduced (0, 1) : r.removeFromLeft (r.getWidth() / (n - i)).reduced (1, 0));
+            buttons[i]->setBounds (kind == Kind::List ? r.removeFromTop (r.getHeight() / (n - i)) : r.removeFromLeft (r.getWidth() / (n - i)));
     }
-    juce::String caption; bool vertical;
+    Kind kind;
     juce::OwnedArray<juce::TextButton> buttons;
     std::unique_ptr<juce::ParameterAttachment> att;
 };
 
-// ---- the window -----------------------------------------------------------------------------------------------------
-AetherEditor::Knob& AetherEditor::addKnob (const char* id, const juce::String& name, float x, float y, float size, bool big)
+struct AetherEditor::Panel : juce::Component
 {
-    juce::Colour c = kOsc;
-    const juce::String s (id);
-    if (s.startsWith ("looper")) c = kLooper; else if (s.startsWith ("osc")) c = kOsc; else if (s.startsWith ("mod")) c = kMod;
-    else if (s.startsWith ("filter")) c = kFilter; else if (s.startsWith ("resonator")) c = kReso; else if (s.startsWith ("echo")) c = kEcho;
-    else if (s.startsWith ("ambience")) c = kAmb; else if (s.startsWith ("output")) c = kMix;
-    auto* k = new Knob (proc_, id, name, c, big);
-    owned_.add (k); addAndMakeVisible (k);
-    place (*k, x, y, size, size + (big ? 28.f : 25.f));
+    explicit Panel (AetherEditor& o) : owner (o) {}
+    void paintOverChildren (juce::Graphics& g) override { owner.paintLive (g); }
+    AetherEditor& owner;
+};
+struct AetherEditor::Backdrop : juce::Component
+{
+    explicit Backdrop (AetherEditor& o) : owner (o) {}
+    void paint (juce::Graphics& g) override { owner.paintBackdrop (g); }
+    AetherEditor& owner;
+};
+
+// ------------------------------------------------------------------------------------------------ building the window
+AetherEditor::Knob& AetherEditor::addKnob (const char* id, const juce::String& name, float cx, float cy, float size, bool bipolar, const juce::StringArray& lines)
+{
+    auto* k = new Knob (proc_, id, name);
+    owned_.add (k); panel_->addAndMakeVisible (k);
+    k->setBounds (juce::Rectangle<float> (cx - size * 0.5f, cy - size * 0.5f, size, size).toNearestInt());
+    knobArt_.push_back ({ cx, cy, size, bipolar, lines.isEmpty() ? juce::StringArray (name.toUpperCase()) : lines });
     return *k;
 }
-AetherEditor::Fader& AetherEditor::addFader (const char* id, const juce::String& name, float x, float y, float h, juce::Colour c)
+void AetherEditor::addFader (const char* id, const juce::String& name, float cx, float top, float bottom)
 {
-    auto* f = new Fader (proc_, id, name, c);
-    owned_.add (f); addAndMakeVisible (f);
-    place (*f, x, y, 70.f, h);
-    return *f;
+    auto* f = new Fader (proc_, id);
+    owned_.add (f); panel_->addAndMakeVisible (f);
+    f->setBounds (juce::Rectangle<float> (cx - 20.0f, top - 8.0f, 40.0f, bottom - top + 16.0f).toNearestInt());
+    faderArt_.push_back ({ cx, bottom, name });
 }
-AetherEditor::Segments& AetherEditor::addSegments (const char* id, const juce::String& caption, const juce::StringArray& names, juce::Colour c, float x, float y, float w, float h, bool vertical)
+AetherEditor::Segments& AetherEditor::addSegments (const char* id, const juce::StringArray& names, Kind kind, float x, float y, float w, float h)
 {
-    auto* sg = new Segments (proc_, id, caption, names, c, vertical);
-    owned_.add (sg); addAndMakeVisible (sg);
-    place (*sg, x, y, w, h);
-    return *sg;
+    auto* s = new Segments (proc_, id, names, kind);
+    owned_.add (s); panel_->addAndMakeVisible (s);
+    s->setBounds (juce::Rectangle<float> (x, y, w, h).toNearestInt());
+    return *s;
 }
-
-juce::TextButton& AetherEditor::addSwitch (const char* id, const juce::String& text, float x, float y, float w, juce::Colour c)
+juce::TextButton& AetherEditor::addSwitch (const char* id, const juce::String& text, float cx, float cy, float minLeft)
 {
     auto* b = new juce::TextButton (text);
     b->setClickingTogglesState (true);
-    b->setColour (juce::TextButton::buttonColourId, kTrack);
-    b->setColour (juce::TextButton::buttonOnColourId, c);
-    b->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffc3c8d0));
-    b->setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+    b->getProperties().set ("style", "option");
     b->setHelpText (text);
-    owned_.add (b); addAndMakeVisible (b);
-    place (*b, x, y, w, 28.f);
+    owned_.add (b); panel_->addAndMakeVisible (b);
+    const float w = std::ceil (needWidth (*b)) + 2.0f;
+    cx = std::max (cx, minLeft + w * 0.5f);      // keeps a wide label off the frame's left edge
+    b->setBounds (juce::Rectangle<float> (cx - w * 0.5f, cy - 11.0f, w, 22.0f).toNearestInt());
     switchAtts_.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (proc_.apvts, id, *b));
     return *b;
 }
-
-void AetherEditor::place (juce::Component& c, float x, float y, float w, float h) { placed_.push_back ({ &c, x, y, w, h }); }
-void AetherEditor::panel (const juce::String& t, float x, float y, float w, float h, juce::Colour c) { panels_.push_back ({ t, x, y, w, h, c }); }
-
+void AetherEditor::caption (const juce::String& s, float x, float y, float spacing) { captions_.push_back ({ s, x, y, spacing }); }
 
 // Ties a snap switch to its knob: while the switch is on the knob clicks from step to step and its read-out names the step; turning the
-// switch on moves the knob onto the nearest step at once. grid() gives the 1/16 note in samples (0 = no tempo) for Start and Length.
-static void bindSnap (juce::Button& sw, SnapSlider& sl, AetherProcessor&, std::function<float (float)> snapTo, std::function<juce::String (float)> text)
+// switch on moves the knob onto the nearest step at once.
+static void bindSnap (juce::Button& sw, SnapSlider& sl, std::function<float (float)> snapTo, std::function<juce::String (float)> text)
 {
     auto* swp = &sw; auto* slp = &sl;
     sl.snapper = [swp, snapTo] (double v) { return swp->getToggleState() ? (double) snapTo ((float) v) : v; };
@@ -259,10 +381,7 @@ static void bindSnap (juce::Button& sw, SnapSlider& sl, AetherProcessor&, std::f
         if (swp->getToggleState()) return text ((float) v);
         return juce::String (v, 2);
     };
-    sw.onClick = [swp, slp, snapTo]
-    {
-        if (swp->getToggleState()) slp->setValue ((double) snapTo ((float) slp->getValue()), juce::sendNotificationSync);
-    };
+    sw.onClick = [swp, slp, snapTo] { if (swp->getToggleState()) slp->setValue ((double) snapTo ((float) slp->getValue()), juce::sendNotificationSync); };
 }
 static float gridSamples (AetherProcessor& p)
 {
@@ -273,207 +392,286 @@ static float gridSamples (AetherProcessor& p)
 AetherEditor::AetherEditor (AetherProcessor& p) : AudioProcessorEditor (&p), proc_ (p), look_ (new Look)
 {
     setLookAndFeel (look_.get());
+    panel_.reset (new Panel (*this));
+    backdrop_.reset (new Backdrop (*this));
+    panel_->setLookAndFeel (look_.get());
+    addAndMakeVisible (*panel_);
+    panel_->setBounds (0, 0, panelW, panelH);
+    backdrop_->setBounds (0, 0, panelW, panelH);
+    backdrop_->setInterceptsMouseClicks (false, false);
+    backdrop_->setBufferedToImage (true);
+    panel_->addAndMakeVisible (*backdrop_);
+
     constrainer_.setFixedAspectRatio (1.4);
     constrainer_.setSizeLimits (700, 500, 2100, 1500);
     setConstrainer (&constrainer_);
     setResizable (true, true);
 
-    // Header
-    title_.setText ("AetherUmbra", juce::dontSendNotification);
-    title_.setColour (juce::Label::textColourId, kInk);
-    notice_.setText ("Unofficial. Based on the open-source Befaco Oneiroi firmware 1.2.2 (GPL-3.0). Not made, approved or supported by Befaco.  Version "
-                         + AetherProcessor::versionString(), juce::dontSendNotification);
-    notice_.setColour (juce::Label::textColourId, kDim);
-    noteInfo_.setColour (juce::Label::textColourId, kInk);
-    noteInfo_.setJustificationType (juce::Justification::centredRight);
-    audioInfo_.setColour (juce::Label::textColourId, kDim);
-    audioInfo_.setJustificationType (juce::Justification::topLeft);
-    tempoInfo_.setColour (juce::Label::textColourId, kMod);
-    tempoInfo_.setJustificationType (juce::Justification::centredLeft);
-    for (auto* l : { &title_, &notice_, &noteInfo_, &audioInfo_, &tempoInfo_ }) { addAndMakeVisible (*l); l->setMinimumHorizontalScale (1.0f); }
-    place (title_, 20, 6, 290, 40); place (tempoInfo_, 322, 10, 430, 32); place (notice_, 20, 48, 1270, 24); place (noteInfo_, 760, 10, 530, 32);
-    addKnob ("output_level", "Out", 1318, 0, 56);
+    addKnob ("output_level", "Out", 1344, 38, 48);
 
-    // Looper (three columns centred at x 110, 270, 430; the small MOD knobs are 74 wide)
-    panel ("LOOPER", 20, 80, 500, 306, kLooper);
-    auto& swSpeed = addSwitch ("snap_looper_speed", "Speed snap", 132, 84, 112, kLooper);
-    auto& swStart = addSwitch ("snap_looper_start", "Start snap", 250, 84, 106, kLooper);
-    auto& swLength = addSwitch ("snap_looper_length", "Length snap", 362, 84, 120, kLooper);
-    auto& knSpeed = addKnob ("looper_speed", "Speed", 52, 114, 116, true);
-    addKnob ("looper_speed_mod", "MOD", 73, 266, 74);
-    auto& knStart = addKnob ("looper_start", "Start", 218, 118, 104, true);
-    addKnob ("looper_start_mod", "MOD", 184, 266, 74);
-    addKnob ("looper_sos", "Sound on sound", 272, 266, 74);
-    auto& knLength = addKnob ("looper_length", "Length", 378, 118, 104, true);
-    addKnob ("looper_length_mod", "MOD", 358, 266, 74);
-    addKnob ("looper_filter", "Filter", 438, 266, 74);
+    // Looper
+    auto& swSpeed = addSwitch ("snap_looper_speed", "Speed snap", kCol[0], kRow1 + 26);
+    auto& swStart = addSwitch ("snap_looper_start", "Start snap", kCol[1], kRow1 + 26);
+    auto& swLength = addSwitch ("snap_looper_length", "Length snap", kCol[2], kRow1 + 26);
+    const float lbig = kRow1 + 96, lsmall = kRow1 + 214;
+    auto& knSpeed = addKnob ("looper_speed", "Speed", kCol[0], lbig, 104);
+    auto& knStart = addKnob ("looper_start", "Start", kCol[1], lbig, 104);
+    auto& knLength = addKnob ("looper_length", "Length", kCol[2], lbig, 104);
+    addKnob ("looper_speed_mod", "MOD", kCol[0], lsmall, 66);
+    addKnob ("looper_sos", "Sound on sound", kCol[0] + 75, lsmall, 66, false, { "SOUND ON", "SOUND" });
+    addKnob ("looper_start_mod", "MOD", kCol[1], lsmall, 66);
+    addKnob ("looper_filter", "Filter", kCol[1] + 75, lsmall, 66, true);
+    addKnob ("looper_length_mod", "MOD", kCol[2], lsmall, 66);
 
     // Oscillator
-    panel ("OSCILLATOR", 20, 396, 500, 306, kOsc);
-    auto& swPitch = addSwitch ("snap_osc_pitch", "Pitch snap", 170, 400, 112, kOsc);
-    auto& knPitch = addKnob ("osc_pitch", "Pitch", 52, 430, 116, true);
-    addKnob ("osc_pitch_mod", "MOD", 32, 582, 74);
-    addKnob ("osc_octave", "Octave", 114, 582, 74);
-    addKnob ("osc_detune", "Detune", 218, 434, 104, true);
-    addKnob ("osc_detune_mod", "MOD", 192, 582, 74);
-    addKnob ("osc_unison", "Unison", 274, 582, 74);
-    addSegments ("osc_kind", "Second oscillator", { "Supersaw", "Wavetable" }, kOsc, 362, 440, 144, 120, true);
+    auto& swPitch = addSwitch ("snap_osc_pitch", "Pitch snap", kCol[0], kRow2 + 26);
+    auto& knPitch = addKnob ("osc_pitch", "Pitch", kCol[0], kRow2 + 96, 104, true);
+    addKnob ("osc_detune", "Detune", kCol[1], kRow2 + 96, 104);
+    addKnob ("osc_pitch_mod", "MOD", kCol[0], kRow2 + 214, 66);
+    addKnob ("osc_octave", "Octave", kCol[0] + 75, kRow2 + 214, 66);
+    addKnob ("osc_detune_mod", "MOD", kCol[1], kRow2 + 214, 66);
+    addKnob ("osc_unison", "Unison", kCol[1] + 75, kRow2 + 214, 66, true);
+    caption ("SECOND", kLoopX + 332, kRow2 + 74);
+    caption ("OSCILLATOR", kLoopX + 332, kRow2 + 91);
+    addSegments ("osc_kind", { "Supersaw", "Wavetable" }, Kind::List, kLoopX + 332, kRow2 + 106, 134, 52);
 
     // Modulation
-    panel ("MODULATION", 530, 80, 125, 622, kMod);
-    addKnob ("mod_level", "Level", 545, 122, 95, true);
-    addKnob ("mod_speed", "Speed", 545, 322, 95, true);
-    addKnob ("mod_type", "Type", 545, 522, 95, true);
+    const float mcx = kModX + kModW * 0.5f;
+    addKnob ("mod_level", "Level", mcx, kRow1 + 100, 84);
+    addKnob ("mod_speed", "Speed", mcx, kRow1 + 250, 84);
+    addKnob ("mod_type", "Type", mcx, kRow1 + 400, 84);
 
-    // Filter, Resonator, Echo, Ambience (columns centred 62, 181, 300 inside each 365-wide panel)
-    panel ("FILTER", 665, 80, 355, 306, kFilter);
-    auto& swCutoff = addSwitch ("snap_filter_cutoff", "Cutoff snap", 775, 84, 124, kFilter);
-    auto& knCutoff = addKnob ("filter_cutoff", "Cutoff", 679, 108, 88, true);
-    addKnob ("filter_cutoff_mod", "MOD", 686, 226, 74);
-    addKnob ("filter_resonance", "Resonance", 798, 108, 88, true);
-    addKnob ("filter_resonance_mod", "MOD", 805, 226, 74);
-    addKnob ("filter_noise", "Noise", 923, 114, 76, true);
-    addSegments ("filter_mode", "Mode", { "LP", "BP", "HP", "CF" }, kFilter, 678, 328, 190, 54);
-    addSegments ("filter_position", "Position", { "I", "II", "III", "IV" }, kFilter, 876, 328, 134, 54);
+    // Filter, Resonator, Echo, Ambience (three columns in each frame)
+    auto cols = [] (float x) { return std::array<float, 3> { x + 60.f, x + 166.f, x + 272.f }; };
+    const auto cF = cols (kFiltX), cR = cols (kResX);
+    auto& swCutoff = addSwitch ("snap_filter_cutoff", "Cutoff snap", cF[0], kRow1 + 26, kFiltX + 18.0f);
+    auto& knCutoff = addKnob ("filter_cutoff", "Cutoff", cF[0], kRow1 + 80, 80);
+    addKnob ("filter_resonance", "Resonance", cF[1], kRow1 + 80, 80);
+    addKnob ("filter_noise", "Noise", cF[2], kRow1 + 80, 80);
+    addKnob ("filter_cutoff_mod", "MOD", cF[0], kRow1 + 184, 70);
+    addKnob ("filter_resonance_mod", "MOD", cF[1], kRow1 + 184, 70);
+    caption ("MODE", kFiltX + 22, kRow1 + 260);
+    caption ("POSITION", kFiltX + 182, kRow1 + 260);
+    addSegments ("filter_mode", { "LP", "BP", "HP", "CF" }, Kind::Pill, kFiltX + 20, kRow1 + 266, 148, 24);
+    addSegments ("filter_position", { "I", "II", "III", "IV" }, Kind::Pill, kFiltX + 180, kRow1 + 266, 133, 24);
 
-    panel ("RESONATOR", 1030, 80, 355, 306, kReso);
-    auto& swTune = addSwitch ("snap_resonator_tune", "Tune snap", 1180, 84, 112, kReso);
-    auto& knTune = addKnob ("resonator_tune", "Tune", 1044, 108, 88, true);
-    addKnob ("resonator_tune_mod", "MOD", 1051, 226, 74);
-    addKnob ("resonator_feedback", "Feedback", 1163, 108, 88, true);
-    addKnob ("resonator_feedback_mod", "MOD", 1170, 226, 74);
-    addKnob ("resonator_dissonance", "Dissonance", 1288, 114, 76, true);
+    auto& swTune = addSwitch ("snap_resonator_tune", "Tune snap", cR[0], kRow1 + 26);
+    auto& knTune = addKnob ("resonator_tune", "Tune", cR[0], kRow1 + 80, 80);
+    addKnob ("resonator_feedback", "Feedback", cR[1], kRow1 + 80, 80);
+    addKnob ("resonator_dissonance", "Dissonance", cR[2], kRow1 + 80, 80);
+    addKnob ("resonator_tune_mod", "MOD", cR[0], kRow1 + 184, 70);
+    addKnob ("resonator_feedback_mod", "MOD", cR[1], kRow1 + 184, 70);
+
+    addSwitch ("echo_sync", "Echo Sync", cF[0], kRow2 + 26, kFiltX + 18.0f);
+    addKnob ("echo_density", "Density", cF[0], kRow2 + 80, 80);
+    addKnob ("echo_repeats", "Repeats", cF[1], kRow2 + 80, 80);
+    addKnob ("echo_filter", "Filter", cF[2], kRow2 + 80, 80, true);
+    addKnob ("echo_density_mod", "MOD", cF[0], kRow2 + 184, 70);
+    addKnob ("echo_repeats_mod", "MOD", cF[1], kRow2 + 184, 70);
+
+    addKnob ("ambience_spacetime", "Spacetime", cR[0], kRow2 + 80, 80);
+    addKnob ("ambience_decay", "Decay", cR[1], kRow2 + 80, 80);
+    addKnob ("ambience_autopan", "Auto-pan", cR[2], kRow2 + 80, 80);
+    addKnob ("ambience_spacetime_mod", "MOD", cR[0], kRow2 + 184, 70);
+    addKnob ("ambience_decay_mod", "MOD", cR[1], kRow2 + 184, 70);
 
     // The snap switches make their knobs click from step to step (1.1.1); the engine snaps the value as well (automation, Mod, saved projects).
-    bindSnap (swPitch, knPitch.slider, proc_, [] (float v) { return aether::snap::pitchKnob (v); }, [] (float v) { return juce::String (aether::snap::pitchText (v)); });
-    bindSnap (swSpeed, knSpeed.slider, proc_, [] (float v) { return aether::snap::speedKnob (v); }, [] (float v) { return juce::String (aether::snap::speedText (v)); });
-    bindSnap (swCutoff, knCutoff.slider, proc_, [] (float v) { return aether::snap::cutoffKnob (v); }, [] (float v) { return juce::String (aether::snap::cutoffText (v)); });
+    bindSnap (swPitch, knPitch.slider, [] (float v) { return aether::snap::pitchKnob (v); }, [] (float v) { return juce::String (aether::snap::pitchText (v)); });
+    bindSnap (swSpeed, knSpeed.slider, [] (float v) { return aether::snap::speedKnob (v); }, [] (float v) { return juce::String (aether::snap::speedText (v)); });
+    bindSnap (swCutoff, knCutoff.slider, [] (float v) { return aether::snap::cutoffKnob (v); }, [] (float v) { return juce::String (aether::snap::cutoffText (v)); });
     auto dissonance = [this] { return proc_.apvts.getRawParameterValue ("resonator_dissonance")->load(); };
-    bindSnap (swTune, knTune.slider, proc_, [dissonance] (float v) { return aether::snap::tuneKnob (v, dissonance()); }, [dissonance] (float v) { return juce::String (aether::snap::tuneText (v, dissonance())); });
-    bindSnap (swStart, knStart.slider, proc_, [this] (float v) { return aether::snap::startKnob (v, gridSamples (proc_)); },
+    bindSnap (swTune, knTune.slider, [dissonance] (float v) { return aether::snap::tuneKnob (v, dissonance()); }, [dissonance] (float v) { return juce::String (aether::snap::tuneText (v, dissonance())); });
+    bindSnap (swStart, knStart.slider, [this] (float v) { return aether::snap::startKnob (v, gridSamples (proc_)); },
               [this] (float v) { return juce::String (aether::snap::sixteenthsText (aether::snap::startSamples (aether::snap::startKnob (v, gridSamples (proc_))), gridSamples (proc_))); });
-    bindSnap (swLength, knLength.slider, proc_, [this] (float v) { return aether::snap::lengthKnob (v, gridSamples (proc_)); },
+    bindSnap (swLength, knLength.slider, [this] (float v) { return aether::snap::lengthKnob (v, gridSamples (proc_)); },
               [this] (float v) { return juce::String (aether::snap::sixteenthsText (aether::snap::lengthSamples (aether::snap::lengthKnob (v, gridSamples (proc_))), gridSamples (proc_))); });
 
-    panel ("ECHO", 665, 396, 355, 306, kEcho);
-    addSwitch ("echo_sync", "Echo Sync", 775, 400, 124, kEcho);
-    addKnob ("echo_density", "Density", 679, 428, 88, true);
-    addKnob ("echo_density_mod", "MOD", 686, 548, 74);
-    addKnob ("echo_repeats", "Repeats", 798, 428, 88, true);
-    addKnob ("echo_repeats_mod", "MOD", 805, 548, 74);
-    addKnob ("echo_filter", "Filter", 923, 434, 76, true);
-
-    panel ("AMBIENCE", 1030, 396, 355, 306, kAmb);
-    addKnob ("ambience_spacetime", "Spacetime", 1044, 428, 88, true);
-    addKnob ("ambience_spacetime_mod", "MOD", 1051, 548, 74);
-    addKnob ("ambience_decay", "Decay", 1163, 428, 88, true);
-    addKnob ("ambience_decay_mod", "MOD", 1170, 548, 74);
-    addKnob ("ambience_autopan", "Auto-pan", 1288, 434, 76, true);
-
     // Bottom row
-    panel ("LOOPER RECORD", 20, 712, 215, 283, kLooper);
-    addSegments ("looper_resampling", "Pre = input, Post = output", { "Pre", "Post" }, kLooper, 32, 744, 191, 58);
-    addAndMakeVisible (recordButton_); place (recordButton_, 32, 810, 191, 84);
+    caption ("PRE = INPUT,", kBotX[0] + 18, kBotY + 40, 1.3f);
+    caption ("POST = OUTPUT", kBotX[0] + 18, kBotY + 57, 1.3f);
+    addSegments ("looper_resampling", { "Pre", "Post" }, Kind::Pill, kBotX[0] + 18, kBotY + 66, kBotW[0] - 36, 24);
+    recordButton_.getProperties().set ("style", "round");
+    panel_->addAndMakeVisible (recordButton_);
+    recordButton_.setBounds (kBotX[0] + 16, kBotY + 117, 140, 34);
     recordAtt_ = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.apvts, "looper_recording", recordButton_);
-    addAndMakeVisible (clearButton_); place (clearButton_, 32, 904, 191, 54);
+    clearButton_.getProperties().set ("style", "round");
+    panel_->addAndMakeVisible (clearButton_);
+    clearButton_.setBounds (kBotX[0] + 16, kBotY + 169, 140, 34);
     clearButton_.onClick = [this] { proc_.requestClearLooper(); };
 
-    panel ("LEVELS", 245, 712, 350, 283, kMix);
     const char* f1[][2] = { { "looper_volume", "Looper" }, { "osc1_volume", "Sine" }, { "osc2_volume", "SS / WT" }, { "input_volume", "Input" } };
-    const juce::Colour c1[] = { kLooper, kOsc, kOsc, kMix };
-    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], 258.f + 84.f * (float) i, 748, 236, c1[i]);
+    for (int i = 0; i < 4; ++i) addFader (f1[i][0], f1[i][1], kBotX[1] + 37.f + 74.f * (float) i, kBotY + 40, kBotY + 170);
 
-    panel ("RANDOM", 605, 712, 210, 283, kRandom);
-    addSegments ("random_mode", "What", { "All", "Osc", "Loop", "FX" }, kRandom, 618, 744, 184, 56);
-    addSegments ("random_amount", "Amount", { "Low", "Mid", "High" }, kRandom, 618, 806, 184, 56);
-    addAndMakeVisible (randomiseButton_); place (randomiseButton_, 618, 870, 184, 56);
-    randomiseButton_.setColour (juce::TextButton::buttonColourId, kRandom.darker (0.3f));
+    caption ("WHAT", kBotX[2] + 20, kBotY + 40);
+    caption ("AMOUNT", kBotX[2] + 106, kBotY + 40);
+    addSegments ("random_mode", { "All", "Osc", "Loop", "FX" }, Kind::List, kBotX[2] + 20, kBotY + 50, 80, 96);
+    addSegments ("random_amount", { "Low", "Mid", "High" }, Kind::List, kBotX[2] + 106, kBotY + 50, 80, 72);
+    for (auto* b : { &randomiseButton_, &undoButton_ }) { b->getProperties().set ("style", "action"); panel_->addAndMakeVisible (*b); }
+    randomiseButton_.setBounds (juce::Rectangle<float> (kBotX[2] + 18, kBotY + 156, kBotW[2] - 36, 24).toNearestInt());
+    undoButton_.setBounds (juce::Rectangle<float> (kBotX[2] + 18, kBotY + 188, kBotW[2] - 36, 24).toNearestInt());
     randomiseButton_.onClick = [this] { proc_.randomise(); };
-    addAndMakeVisible (undoButton_); place (undoButton_, 618, 934, 184, 48);
     undoButton_.onClick = [this] { proc_.undoRedo(); };
 
-    panel ("LEVELS", 825, 712, 350, 283, kMix);
     const char* f2[][2] = { { "filter_level", "Filter" }, { "resonator_volume", "Resonator" }, { "echo_volume", "Echo" }, { "ambience_volume", "Ambience" } };
-    const juce::Colour c2[] = { kFilter, kReso, kEcho, kAmb };
-    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], 838.f + 84.f * (float) i, 748, 236, c2[i]);
-
-    panel ("AUDIO IN", 1185, 712, 205, 283, kMix);
-    addAndMakeVisible (audioInfo_); place (audioInfo_, 1195, 744, 185, 244);
+    for (int i = 0; i < 4; ++i) addFader (f2[i][0], f2[i][1], kBotX[3] + 46.f + 88.f * (float) i, kBotY + 40, kBotY + 170);
 
     timerCallback();
     startTimerHz (30);
     setSize (1260, 900);
 }
 
-AetherEditor::~AetherEditor() { stopTimer(); setLookAndFeel (nullptr); }
-
-void AetherEditor::paint (juce::Graphics& g)
+AetherEditor::~AetherEditor()
 {
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff12151b), 0.f, 0.f, kBg, 0.f, (float) getHeight(), false));
-    g.fillAll();
-    for (const auto& p : panels_)
+    stopTimer();
+    panel_->setLookAndFeel (nullptr);
+    setLookAndFeel (nullptr);
+}
+
+juce::Component& AetherEditor::getBackdrop() { return *backdrop_; }
+juce::Array<juce::Rectangle<int>> AetherEditor::liveAreas() { return { kTempoArea, kNoteArea, kBarArea, kAudioArea }; }
+std::vector<juce::Rectangle<float>> AetherEditor::frameRects()
+{
+    std::vector<juce::Rectangle<float>> v;
+    for (const auto& f : kFrames) v.push_back ({ f.x, f.y, f.w, f.h });
+    return v;
+}
+
+// ------------------------------------------------------------------------------------------------ fixed artwork
+void AetherEditor::paintBackdrop (juce::Graphics& g)
+{
+    g.fillAll (panel());
+
+    // Header: the title between two gold ornament lines
+    textIn (g, "AETHERUMBRA", titleFont(), 700.0f + titleSpacing * 0.5f, titleBaseline, goldText(), juce::Justification::centred);
+    g.setColour (gold());
+    g.fillRect (272.0f, 41.0f, ornamentLeftEnd - 272.0f, 1.3f);
+    g.fillRect (ornamentRightStart, 41.0f, 1128.0f - ornamentRightStart, 1.3f);
+    g.fillEllipse (268.4f, 39.0f, 5.2f, 5.2f);
+    g.fillEllipse (1126.4f, 39.0f, 5.2f, 5.2f);
+    textAt (g, "PARTICLEDOTS", 22.0f, 34.0f, muted(), 14.0f, juce::Justification::centredLeft, false, 2.5f);
+
+    // Section frames, each with its title set into the top line
+    for (const auto& f : kFrames)
     {
-        const auto r = juce::Rectangle<float> (p.x, p.y, p.w, p.h) * scale_;
-        g.setGradientFill (juce::ColourGradient (kPanel.brighter (0.10f), 0.f, r.getY(), kPanel.darker (0.12f), 0.f, r.getBottom(), false));
-        g.fillRoundedRectangle (r, 8.f * scale_);
-        g.setColour (p.colour.withAlpha (0.45f)); g.drawRoundedRectangle (r.reduced (0.5f), 8.f * scale_, 1.f);
-        g.setColour (juce::Colour (0x10ffffff)); g.drawRoundedRectangle (r.reduced (1.5f), 7.f * scale_, 1.f);    // faint inner highlight
-        // coloured tab in front of the title, then the title
-        g.setColour (p.colour); g.fillRoundedRectangle (r.getX() + 9.f * scale_, r.getY() + 10.f * scale_, 5.f * scale_, 17.f * scale_, 2.f * scale_);
-        g.setFont (fontOf (18.f * scale_, true));
-        g.drawFittedText (p.title, juce::Rectangle<int> ((int) (r.getX() + 21.f * scale_), (int) (r.getY() + 6.f * scale_), (int) (r.getWidth() - 26.f * scale_), (int) (24.f * scale_)), juce::Justification::centredLeft, 1, 0.8f);
+        g.setColour (gold());
+        g.drawRoundedRectangle (f.x + 0.5f, f.y + 0.5f, f.w, f.h, 12.0f, 1.3f);
+        const juce::String t (f.title);
+        const float tw = widthOf (t, capsFont());
+        const float tx = f.centred ? f.x + f.w * 0.5f - tw * 0.5f : f.x + 20.0f;
+        g.setColour (panel());
+        g.fillRect (tx - 7.0f, f.y - 6.0f, tw + 14.0f, 12.0f);
+        textIn (g, t, capsFont(), tx, f.y + 5.0f, goldText(), juce::Justification::centredLeft);
     }
+
+    // Knob range arcs (7:30 round to 4:30, a dot at each end, one at the top for knobs whose middle means "off") and labels
+    for (const auto& k : knobArt_)
+    {
+        const float R = k.size * 0.5f;
+        juce::Path arc;
+        arc.addCentredArc (k.cx, k.cy, R, R, 0.0f, juce::degreesToRadians (-135.0f), juce::degreesToRadians (135.0f), true);
+        g.setColour (gold());
+        g.strokePath (arc, juce::PathStrokeType (1.3f));
+        const float d = R * 0.70710678f;
+        g.fillEllipse (k.cx - d - 2.1f, k.cy + d - 2.1f, 4.2f, 4.2f);
+        g.fillEllipse (k.cx + d - 2.1f, k.cy + d - 2.1f, 4.2f, 4.2f);
+        if (k.bipolar) g.fillEllipse (k.cx - 2.1f, k.cy - R - 2.1f, 4.2f, 4.2f);
+        for (int i = 0; i < k.lines.size(); ++i)
+            textAt (g, k.lines[i], k.cx, k.cy + R + 22.0f + 16.0f * (float) i, text(), 15.0f, juce::Justification::centred, false, k.lines.size() > 1 ? 1.3f : 1.6f);
+    }
+    for (const auto& f : faderArt_)
+        textAt (g, f.name.toUpperCase(), f.cx, f.bottom + 30.0f, text(), 14.0f, juce::Justification::centred, false, 1.4f);
+    for (const auto& c : captions_)
+        textAt (g, c.s, c.x, c.y, goldText(), 14.0f, juce::Justification::centredLeft, false, c.spacing);
+    textAt (g, "MOD OUT", kModX + kModW * 0.5f, kRow2 + 262.0f, muted(), 14.0f, juce::Justification::centred, false, 1.5f);
+    textAt (g, "Unofficial. Based on the open-source Befaco Oneiroi firmware 1.2.2 (GPL-3.0). Not made, approved or supported by Befaco.  Version "
+                   + AetherProcessor::versionString(), 700.0f, 992.0f, muted(), 13.0f, juce::Justification::centred, false, 0.2f);
+
+    // Flow lines. Dotted: Modulation feeds the MOD knobs of six sections. Solid: the sound goes Resonator, Echo, Ambience
+    // (the firmware's order; the Filter has no line because its place depends on its Position switch). It hops over the dotted line.
+    const float ls = kCol[0] + 75.0f, bottomEdge = kRow1 + kRowH;
+    stroke (g, run ({ { ls, kBus }, { kModX, kBus } }), true);
+    stroke (g, run ({ { kModX + kModW, kBus }, { 1300.0f, kBus } }), true);
+    node (g, kModX, kBus); node (g, kModX + kModW, kBus);
+    const float stems[6][2] = { { ls, bottomEdge }, { ls, kRow2 }, { 844.0f, bottomEdge }, { 780.0f, kRow2 }, { 1160.0f, bottomEdge }, { 1300.0f, kRow2 } };
+    for (const auto& s : stems) { stroke (g, run ({ { s[0], kBus }, { s[0], s[1] } }), true); node (g, s[0], s[1]); }
+    const float axOut = 1100.0f, axIn = 820.0f;
+    g.setColour (panel());
+    g.fillRect (axOut - 5.0f, kBus - 2.0f, 10.0f, 4.0f);                                  // the hop clears the dotted line under it
+    stroke (g, run ({ { axOut, bottomEdge }, { axOut, kBus - 9.0f } }), false);
+    juce::Path hop;
+    hop.startNewSubPath (axOut, kBus - 9.0f);
+    hop.quadraticTo (axOut + 7.0f, kBus, axOut, kBus + 9.0f);
+    stroke (g, hop, false);
+    stroke (g, run ({ { axOut, kBus + 9.0f }, { axOut, kLane }, { axIn, kLane }, { axIn, kRow2 } }), false);
+    node (g, axOut, bottomEdge); node (g, axIn, kRow2);
+    stroke (g, run ({ { kFiltX + kSecW, kRow2 + 150.0f }, { kResX, kRow2 + 150.0f } }), false);
+    node (g, kFiltX + kSecW, kRow2 + 150.0f); node (g, kResX, kRow2 + 150.0f);
+}
+
+// ------------------------------------------------------------------------------------------------ live drawing
+void AetherEditor::paintLive (juce::Graphics& g)
+{
+    textAt (g, tempoText_, 22.0f, 68.0f, muted(), 15.0f, juce::Justification::centredLeft, false, 0.3f);
+    textAt (g, noteText_, 1290.0f, 68.0f, text(), 15.0f, juce::Justification::centredRight, false, 0.3f);
 
     // The modulation source: a bar that swings left and right with the current modulation value (-1 .. 1).
     {
-        const auto r = juce::Rectangle<float> (545.f, 662.f, 95.f, 22.f) * scale_;
-        g.setColour (kTrack); g.fillRoundedRectangle (r, 5.f * scale_);
-        const float mid = r.getCentreX(), half = r.getWidth() * 0.5f - 2.f * scale_, v = juce::jlimit (-1.f, 1.f, modShown_);
-        g.setColour (kMod);
-        g.fillRoundedRectangle (juce::Rectangle<float> (juce::jmin (mid, mid + v * half), r.getY() + 3.f * scale_, std::abs (v * half) + 1.f, r.getHeight() - 6.f * scale_), 3.f * scale_);
-        g.setColour (kInk.withAlpha (0.55f)); g.drawLine (mid, r.getY() + 2.f * scale_, mid, r.getBottom() - 2.f * scale_, 1.f);
-        g.setColour (kDim); g.setFont (fontOf (14.f * scale_));
-        g.drawText ("MOD OUT", r.translated (0.f, 22.f * scale_).toNearestInt(), juce::Justification::centred);
+        const auto r = juce::Rectangle<float> (kModX + 20.0f, kRow2 + 220.0f, kModW - 40.0f, 22.0f);
+        g.setColour (skirt());  g.fillRoundedRectangle (r, 6.0f);
+        g.setColour (gold());   g.drawRoundedRectangle (r.reduced (0.5f), 6.0f, 1.1f);
+        const float mid = r.getCentreX(), half = r.getWidth() * 0.5f - 3.0f, v = juce::jlimit (-1.f, 1.f, modShown_);
+        g.setColour (cap().withAlpha (0.8f));
+        g.fillRoundedRectangle (juce::jmin (mid, mid + v * half), r.getY() + 4.0f, std::abs (v * half) + 1.0f, r.getHeight() - 8.0f, 3.0f);
+        g.setColour (gold());   g.fillRect (mid - 0.6f, r.getY() + 3.0f, 1.2f, r.getHeight() - 6.0f);
     }
-}
 
-void AetherEditor::resized()
-{
-    scale_ = (float) getWidth() / 1400.f;
-    for (auto& p : placed_)
-        p.c->setBounds (juce::Rectangle<float> (p.x, p.y, p.w, p.h).transformedBy (juce::AffineTransform::scale (scale_)).toNearestInt());
-    title_.setFont (fontOf (32.f * scale_, true));
-    notice_.setFont (fontOf (15.f * scale_));
-    noteInfo_.setFont (fontOf (19.f * scale_));
-    tempoInfo_.setFont (fontOf (19.f * scale_, true));
-    audioInfo_.setFont (fontOf (16.f * scale_));
+    for (int i = 0; i < audioLines_.size(); ++i)
+    {
+        const juce::String l = audioLines_[i];
+        if (l.isEmpty()) continue;
+        textAt (g, l, kBotX[4] + 18.0f, kBotY + 42.0f + 17.0f * (float) i, i < audioNumLines_ ? muted() : text(), 13.0f, juce::Justification::centredLeft, false, 0.2f);
+    }
 }
 
 void AetherEditor::timerCallback()
 {
-    // the modulation bar moves smoothly (30 times a second); the texts are refreshed 10 times a second
+    // the modulation bar moves smoothly (30 times a second); the texts are refreshed 10 times a second and redrawn only when they change
     modShown_ = proc_.modulationValue();
-    repaint (juce::Rectangle<float> (545.f, 655.f, 95.f, 50.f).transformedBy (juce::AffineTransform::scale (scale_)).toNearestInt());
+    if (panel_ != nullptr) panel_->repaint (kBarArea);
     if (tick_++ % 3 != 0) return;
 
     const int n = proc_.lastNote();
-    noteInfo_.setText (n < 0 ? juce::String ("Pitch from MIDI notes: no note played yet (plays C4)")
-                             : "Pitch from MIDI notes: last note " + noteName (n) + " (" + juce::String (n) + ")", juce::dontSendNotification);
+    const juce::String note = n < 0 ? juce::String ("Pitch from MIDI notes: no note played yet (plays C4)")
+                                    : "Pitch from MIDI notes: last note " + noteName (n) + " (" + juce::String (n) + ")";
     const double bpm = proc_.hostBpm();
-    if (bpm <= 0.0) tempoInfo_.setText ("Tempo: none from Logic, own clock", juce::dontSendNotification);
+    juce::String tempo;
+    if (bpm <= 0.0) tempo = "Tempo: none from Logic, own clock";
     else
     {
-        juce::String t = "Tempo: " + juce::String (bpm, 1) + " BPM from Logic";
-        if (bpm < 40.0 || bpm > 300.0) t << " (used as " << juce::String (juce::jlimit (40.0, 300.0, bpm), 0) << ")";
-        tempoInfo_.setText (t, juce::dontSendNotification);
+        tempo = "Tempo: " + juce::String (bpm, 1) + " BPM from Logic";
+        if (bpm < 40.0 || bpm > 300.0) tempo << " (used as " << juce::String (juce::jlimit (40.0, 300.0, bpm), 0) << ")";
     }
     const int ch = proc_.inputChannels();
     const float peak = proc_.takeInputPeak();
-    audioInfo_.setText ("In Logic, choose the audio track you want to process in this plugin's Side Chain menu.\n\nMuting the source track does not stop the side chain.\n\n"
-                        + (ch == 0 ? juce::String ("No audio input connected.")
-                                   : juce::String (ch) + " channel(s) in, level "
-                                         + (peak > 1.0e-5f ? juce::String (20.f * std::log10 (peak), 1) + " dB" : juce::String ("silent"))),
-                        juce::dontSendNotification);
+    const juce::String level = ch == 0 ? juce::String ("No audio input connected.")
+                                       : juce::String (ch) + " channel(s) in, level " + (peak > 1.0e-5f ? juce::String (20.f * std::log10 (peak), 1) + " dB" : juce::String ("silent"));
+    juce::StringArray lines = wrapText ("In Logic, choose the audio track you want to process in this plugin's Side Chain menu.", 13.0f, 0.2f, kAudioRoom);
+    lines.add (juce::String());
+    lines.addArray (wrapText ("Muting the source track does not stop the side chain.", 13.0f, 0.2f, kAudioRoom));
+    lines.add (juce::String());
+    const int firstTwo = lines.size();
+    lines.addArray (wrapText (level, 13.0f, 0.2f, kAudioRoom));
+
+    if (tempo != tempoText_) { tempoText_ = tempo; panel_->repaint (kTempoArea); }
+    if (note != noteText_)   { noteText_ = note;   panel_->repaint (kNoteArea); }
+    if (lines != audioLines_) { audioLines_ = lines; audioNumLines_ = firstTwo; panel_->repaint (kAudioArea); }
+}
+
+void AetherEditor::paint (juce::Graphics& g) { g.fillAll (panel()); }
+
+void AetherEditor::resized()
+{
+    panel_->setTransform (juce::AffineTransform::scale ((float) getWidth() / (float) panelW));
 }
 
 juce::Image AetherEditor::renderToImage() { return createComponentSnapshot (getLocalBounds(), true, 1.0f); }

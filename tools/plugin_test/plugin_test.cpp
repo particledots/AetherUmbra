@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstdio>
 #include <vector>
+#include <chrono>
+#include <set>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -636,6 +638,102 @@ int main (int argc, char** argv)
                     click (b);
                     check (std::abs (val (proc, rr.second) - before) < 1e-6f, juce::String (rr.first) + ": without a tempo from Logic the knob stays where it is");
                     click (b);
+                }
+            }
+            // ---- the gold sections look (1.1.2): title, texts, drawing cost ----
+            if (auto* ae = dynamic_cast<AetherEditor*> (ed.get()))
+            {
+                using namespace AetherStyle;
+                const float tw = widthOf ("AETHERUMBRA", titleFont());
+                check (tw > 100.0f && tw <= titleRight - titleLeft, "title width " + juce::String (tw, 1) + " fits the title area (" + juce::String (titleRight - titleLeft, 0) + ")");
+                for (int w : { 700, 1260, 1400, 2100 })
+                {
+                    ed->setSize (w, (int) std::lround (w / 1.4));
+                    const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+                    const float s = (float) w / 1400.0f;
+                    int spill = 0, inside = 0;
+                    for (int y = (int) (10 * s); y < (int) (57 * s); ++y)     // above the baseline of the header texts
+                    {
+                        for (int x = (int) std::ceil (titleLeft * s); x < (int) (titleRight * s); ++x)
+                            if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++inside;
+                        for (int x = (int) std::ceil ((ornamentLeftEnd + 1.5f) * s); x < (int) ((titleLeft - 0.5f) * s); ++x)
+                            if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++spill;
+                        for (int x = (int) std::ceil ((titleRight + 0.5f) * s); x < (int) ((ornamentRightStart - 1.5f) * s); ++x)
+                            if (img.getPixelAt (x, y).getBrightness() > 0.6f) ++spill;
+                    }
+                    check (inside > 60 && spill == 0, "width " + juce::String (w) + ": title drawn inside its area (" + juce::String (inside) + " lit pixels inside, " + juce::String (spill) + " outside)");
+                }
+                // every text fits: the panel's own texts do not touch each other and stay inside their frame; every control's text fits the control
+                ed->setSize (1400, 1000);
+                textLog().clear(); logOn() = true;
+                ae->getBackdrop().setBufferedToImage (false);
+                ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+                ae->getBackdrop().setBufferedToImage (true);
+                logOn() = false;
+                const auto log = textLog();
+                const auto frames = AetherEditor::frameRects();
+                int overlaps = 0, outside = 0;
+                for (size_t i = 0; i < log.size(); ++i)
+                {
+                    for (size_t j = i + 1; j < log.size(); ++j)
+                        if (log[i].r.reduced (0.0f, 0.5f).intersects (log[j].r.reduced (0.0f, 0.5f)))
+                        { if (++overlaps < 6) std::printf ("  texts overlap: \"%s\" and \"%s\"\n", log[i].s.toRawUTF8(), log[j].s.toRawUTF8()); }
+                    const auto c = log[i].r.getCentre();
+                    bool isTitle = false;      // a frame's title sits in its top line
+                    for (const auto& f : frames) if (std::abs (c.y - f.getY()) < 10.0f && c.x > f.getX() && c.x < f.getRight()) isTitle = true;
+                    if (c.y > 100.0f && c.y < 970.0f && ! isTitle)
+                    {
+                        bool ok = false;
+                        for (const auto& f : frames)
+                            if (f.contains (c) && log[i].r.getX() >= f.getX() + 2.0f && log[i].r.getRight() <= f.getRight() - 2.0f
+                                && log[i].r.getY() >= f.getY() - 10.0f && log[i].r.getBottom() <= f.getBottom() - 2.0f) ok = true;
+                        if (! ok && ++outside < 6) std::printf ("  text outside its frame: \"%s\" at %.0f,%.0f\n", log[i].s.toRawUTF8(), log[i].r.getX(), log[i].r.getY());
+                    }
+                }
+                check (log.size() > 60 && overlaps == 0, "no two texts of the panel touch (" + juce::String ((int) log.size()) + " texts, " + juce::String (overlaps) + " overlaps)");
+                check (outside == 0, "every text stays inside its frame (" + juce::String (outside) + " outside)");
+                int tooNarrow = 0, withStyle = 0;
+                for (auto* c : all)
+                    if (auto* b = dynamic_cast<juce::Button*> (c))
+                    {
+                        const float need = AetherEditor::needWidth (*b);
+                        if (need <= 0.0f) continue;
+                        ++withStyle;
+                        if (need > (float) b->getWidth() && ++tooNarrow < 6) std::printf ("  button too narrow: \"%s\" needs %.1f has %d\n", b->getButtonText().toRawUTF8(), need, b->getWidth());
+                    }
+                check (withStyle == 30 && tooNarrow == 0, "the text of all 30 buttons fits its button (" + juce::String (tooNarrow) + " too narrow)");
+                // the longest header texts (tempo and last note) stay inside the window and clear of each other
+                const float tempoMax = juce::jmax (textWidth ("Tempo: none from Logic, own clock", 15.0f, false, 0.3f), textWidth ("Tempo: 350.0 BPM from Logic (used as 300)", 15.0f, false, 0.3f));
+                const float noteMax = juce::jmax (textWidth ("Pitch from MIDI notes: no note played yet (plays C4)", 15.0f, false, 0.3f), textWidth ("Pitch from MIDI notes: last note C#-1 (127)", 15.0f, false, 0.3f));
+                check (22.0f + tempoMax < 1290.0f - noteMax - 20.0f && 1290.0f - noteMax > 22.0f, "longest tempo text (" + juce::String (tempoMax, 0) + ") and note text (" + juce::String (noteMax, 0) + ") do not touch each other");
+                // drawing cost: only the live areas are redrawn 30 times a second; compare with drawing the whole panel every time
+                for (int w : { 1400, 2100 })
+                {
+                    ed->setSize (w, (int) std::lround (w / 1.4));
+                    const float s = (float) w / 1400.0f;
+                    juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
+                    juce::RectangleList<int> live;
+                    for (const auto& a : AetherEditor::liveAreas()) live.add (a.toFloat().transformedBy (juce::AffineTransform::scale (s)).getSmallestIntegerContainer());
+                    auto timeIt = [&] (bool liveOnly, int n)
+                    {
+                        const auto t0 = std::chrono::steady_clock::now();
+                        for (int i = 0; i < n; ++i)
+                        {
+                            juce::Graphics g (img);
+                            if (liveOnly) g.reduceClipRegion (live);
+                            ed->paintEntireComponent (g, true);
+                        }
+                        return std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count() / n;
+                    };
+                    ae->getBackdrop().setBufferedToImage (false);
+                    timeIt (false, 3);
+                    const double whole = timeIt (false, 20);
+                    ae->getBackdrop().setBufferedToImage (true);
+                    timeIt (true, 3);
+                    const double tick = timeIt (true, 60);
+                    std::printf ("drawing at width %d: live update %.2f ms, whole panel every time %.2f ms\n", w, tick, whole);
+                    check (tick < 0.6 * whole, "width " + juce::String (w) + ": the live update (" + juce::String (tick, 2) + " ms) is much lighter than drawing the whole panel (" + juce::String (whole, 2) + " ms)");
+                    check (tick < 6.0, "width " + juce::String (w) + ": the live update takes " + juce::String (tick, 2) + " ms (limit 6 ms; 30 updates a second)");
                 }
             }
             ed->setSize (1400, 1000);

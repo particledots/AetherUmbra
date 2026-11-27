@@ -8,7 +8,7 @@ processes the audio of a Logic track. Pitch comes from MIDI notes instead of the
 on the author's own Macs.
 
 ## Status
-Version 1.1.1 (1.1.0 plus the snap knobs described below): a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; 1.1.1 was tested by Bryn in Logic on both Macs and passed (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
+Version 1.1.2 (1.1.1 in the new "gold sections" window look: looks only, nothing else changed; see the CHANGELOG; not tested in Logic yet). Version 1.1.1 was 1.1.0 plus the snap knobs described below: a combined fix round on top of the finished 1.0.0 (Milestone 2 passed on both Macs). Echo Sync and six snap switches are new; 1.1.1 was tested by Bryn in Logic on both Macs and passed (see CHANGELOG). AetherUmbra is an AU **Instrument** (plus a VST3
 from the same code).
 
 New in 1.1.0 (seven new parameters, 56 to 62, at the end of the list; the window has a small on/off button for each in the title bar of its panel):
@@ -31,7 +31,7 @@ New in 1.0.0:
   the firmware's own clock runs. Tempo is limited to 40 to 300 BPM. The **looper does not follow the tempo** (on the module an
   external clock restarts the loop on every beat; in a plugin that would chop the loop up), so it plays freely.
 - **Tail length 12 s**, measured (see below), reported to Logic so Bounce in Place and export do not cut the reverb and echo.
-- **Final window**: coloured sections, glowing knob arcs, a modulation level bar, the tempo line.
+- **Final window**: coloured sections, glowing knob arcs, a modulation level bar, the tempo line. Since 1.1.2 the window looks like the Anamnesis plugin's panel (black, gold frames, cream knob caps, blue lamps for on / chosen); the fonts are Space Grotesk and Marcellus (SIL OFL, assets/fonts).
 - Licence check finished (see Source and licence).
 
 Tail: the reverb, echo and resonator are measured as the time until the sound is 80 dB down after a noise burst, at 40, 60
