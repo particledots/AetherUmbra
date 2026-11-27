@@ -611,10 +611,15 @@ void AetherEditor::paintBackdrop (juce::Graphics& g)
 // ------------------------------------------------------------------------------------------------ live drawing
 void AetherEditor::paintLive (juce::Graphics& g)
 {
-    textAt (g, tempoText_, 22.0f, 68.0f, muted(), 15.0f, juce::Justification::centredLeft, false, 0.3f);
-    textAt (g, noteText_, 1290.0f, 68.0f, text(), 15.0f, juce::Justification::centredRight, false, 0.3f);
+    // Only what lies in the area being redrawn is drawn (laying out text is the expensive part on a Mac).
+    const auto clip = g.getClipBounds();
+    if (clip.intersects (kTempoArea))
+        textAt (g, tempoText_, 22.0f, 68.0f, muted(), 15.0f, juce::Justification::centredLeft, false, 0.3f);
+    if (clip.intersects (kNoteArea))
+        textAt (g, noteText_, 1290.0f, 68.0f, text(), 15.0f, juce::Justification::centredRight, false, 0.3f);
 
     // The modulation source: a bar that swings left and right with the current modulation value (-1 .. 1).
+    if (clip.intersects (kBarArea))
     {
         const auto r = juce::Rectangle<float> (kModX + 20.0f, kRow2 + 220.0f, kModW - 40.0f, 22.0f);
         g.setColour (skirt());  g.fillRoundedRectangle (r, 6.0f);
@@ -625,7 +630,7 @@ void AetherEditor::paintLive (juce::Graphics& g)
         g.setColour (gold());   g.fillRect (mid - 0.6f, r.getY() + 3.0f, 1.2f, r.getHeight() - 6.0f);
     }
 
-    for (int i = 0; i < audioLines_.size(); ++i)
+    for (int i = 0; i < audioLines_.size() && clip.intersects (kAudioArea); ++i)
     {
         const juce::String l = audioLines_[i];
         if (l.isEmpty()) continue;
