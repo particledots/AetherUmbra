@@ -712,28 +712,37 @@ int main (int argc, char** argv)
                     ed->setSize (w, (int) std::lround (w / 1.4));
                     const float s = (float) w / 1400.0f;
                     juce::Image img (juce::Image::ARGB, ed->getWidth(), ed->getHeight(), true);
-                    juce::RectangleList<int> live;
+                    // each live area is repainted on its own (the bar 30 times a second, the texts only when they change)
+                    juce::Array<juce::Rectangle<int>> live;
                     for (const auto& a : AetherEditor::liveAreas()) live.add (a.toFloat().transformedBy (juce::AffineTransform::scale (s)).getSmallestIntegerContainer());
-                    auto timeIt = [&] (bool liveOnly, int n)
+                    auto timeIt = [&] (const juce::Rectangle<int>* only, int n)
                     {
                         const auto t0 = std::chrono::steady_clock::now();
                         for (int i = 0; i < n; ++i)
                         {
                             juce::Graphics g (img);
-                            if (liveOnly) g.reduceClipRegion (live);
+                            if (only != nullptr) g.reduceClipRegion (*only);
                             ed->paintEntireComponent (g, true);
                         }
                         return std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - t0).count() / n;
                     };
                     ae->getBackdrop().setBufferedToImage (false);
-                    timeIt (false, 3);
-                    const double whole = timeIt (false, 20);
+                    timeIt (nullptr, 3);
+                    const double whole = timeIt (nullptr, 20);
                     ae->getBackdrop().setBufferedToImage (true);
-                    timeIt (true, 3);
-                    const double tick = timeIt (true, 60);
-                    std::printf ("drawing at width %d: live update %.2f ms, whole panel every time %.2f ms\n", w, tick, whole);
-                    check (tick < 0.6 * whole, "width " + juce::String (w) + ": the live update (" + juce::String (tick, 2) + " ms) is much lighter than drawing the whole panel (" + juce::String (whole, 2) + " ms)");
-                    check (tick < 6.0, "width " + juce::String (w) + ": the live update takes " + juce::String (tick, 2) + " ms (limit 6 ms; 30 updates a second)");
+                    timeIt (nullptr, 2);
+                    double sum = 0.0, bar = 0.0;
+                    for (int i = 0; i < live.size(); ++i)
+                    {
+                        timeIt (&live.getReference (i), 3);
+                        const double t = timeIt (&live.getReference (i), 40);
+                        sum += t;
+                        if (i == 2) bar = t;   // kBarArea, the one that is redrawn 30 times a second
+                        std::printf ("  live area %d (%dx%d): %.2f ms\n", i, live[i].getWidth(), live[i].getHeight(), t);
+                    }
+                    std::printf ("drawing at width %d: bar update %.2f ms, all four live areas %.2f ms, whole panel every time %.2f ms\n", w, bar, sum, whole);
+                    check (sum < 0.6 * whole, "width " + juce::String (w) + ": redrawing all four live areas (" + juce::String (sum, 2) + " ms) is much lighter than drawing the whole panel (" + juce::String (whole, 2) + " ms)");
+                    check (bar < 0.2 * whole, "width " + juce::String (w) + ": the modulation bar update (30 a second) takes " + juce::String (bar, 2) + " ms, under a fifth of the whole panel (" + juce::String (whole, 2) + " ms)");
                 }
             }
             ed->setSize (1400, 1000);
